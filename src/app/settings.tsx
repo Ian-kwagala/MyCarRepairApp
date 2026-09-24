@@ -1,5 +1,5 @@
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Bell, Fingerprint, Globe, Shield, Trash2, UserX } from 'lucide-react-native';
+import { Bell, Fingerprint, Globe, Shield, Trash2, UserX } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Linking, Platform, Switch } from 'react-native';
 

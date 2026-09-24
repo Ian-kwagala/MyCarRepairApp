@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ClipboardList } from 'lucide-react-native';
+import { ClipboardList } from '@/components/icons';
 import { useState } from 'react';
 
 import { EmptyState, ErrorState, JobListItem, Screen, Section, Segmented, SkeletonList } from '@/components';

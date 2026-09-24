@@ -1,4 +1,4 @@
-import { Circle, CircleCheck, Clock, LogOut, Phone, ShieldCheck, Upload } from 'lucide-react-native';
+import { Circle, CircleCheck, Clock, LogOut, Phone, ShieldCheck, Upload } from '@/components/icons';
 import { useState } from 'react';
 import { View } from 'react-native';
 

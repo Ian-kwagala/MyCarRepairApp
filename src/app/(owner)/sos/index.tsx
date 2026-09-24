@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Battery, Car, Cog, Disc3, Fuel, LocateFixed, Phone, TriangleAlert, Truck, type LucideIcon } from 'lucide-react-native';
+import { Battery, Car, Cog, Disc3, Fuel, LocateFixed, Phone, TriangleAlert, Truck, type LucideIcon } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 

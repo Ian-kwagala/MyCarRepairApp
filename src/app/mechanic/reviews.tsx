@@ -1,4 +1,4 @@
-import { Star } from 'lucide-react-native';
+import { Star } from '@/components/icons';
 import { View } from 'react-native';
 
 import { Card, EmptyState, ErrorState, Row, Screen, SkeletonList, Stars, Text } from '@/components';

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, X } from 'lucide-react-native';
+import { Check, X } from '@/components/icons';
 import { useState } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 

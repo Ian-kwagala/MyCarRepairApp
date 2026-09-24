@@ -31,9 +31,10 @@ npx expo prebuild --platform android --clean --no-install
 cp "${TMPDIR:-/tmp}/package.json.prebuild-backup" package.json
 echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-# arm64-v8a covers practically every Android phone sold since ~2019; add armeabi-v7a for older 32-bit
-# devices with ARCHS=arm64-v8a,armeabi-v7a (bigger APK).
-(cd android && ./gradlew assembleRelease -PreactNativeArchitectures="${ARCHS:-arm64-v8a}" --console=plain)
+# One APK for every Android phone (7.0+): arm64-v8a for 64-bit phones, armeabi-v7a for 32-bit ones (older
+# and budget models, Android Go). Both are needed: many newer phones can no longer run 32-bit-only apps.
+# x86/x86_64 are only for emulators and add ~15 MB; pass ARCHS=armeabi-v7a,arm64-v8a,x86,x86_64 to include them.
+(cd android && ./gradlew assembleRelease -PreactNativeArchitectures="${ARCHS:-armeabi-v7a,arm64-v8a}" --console=plain)
 
 mkdir -p dist
 cp android/app/build/outputs/apk/release/app-release.apk "dist/$OUT"

@@ -122,6 +122,7 @@ const config: ExpoConfig = {
         },
       },
     ],
+    './plugins/with-english-resources',
   ],
   experiments: {
     typedRoutes: true,

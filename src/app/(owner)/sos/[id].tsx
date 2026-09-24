@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { CircleCheck, Phone, Star } from 'lucide-react-native';
+import { CircleCheck, Phone, Star } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { BackHandler, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ChevronLeft, type LucideIcon } from 'lucide-react-native';
+import { ChevronLeft, type LucideIcon } from '@/components/icons';
 import type { ReactNode } from 'react';
 import {
   KeyboardAvoidingView,

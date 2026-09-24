@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { BadgeCheck, CarFront, ClipboardList, ShieldCheck, Siren, Wallet, Wrench } from 'lucide-react-native';
+import { BadgeCheck, CarFront, ClipboardList, ShieldCheck, Siren, Wallet, Wrench } from '@/components/icons';
 import { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

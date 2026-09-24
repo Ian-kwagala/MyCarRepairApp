@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { CalendarDays, Phone, Receipt, Siren, Star } from 'lucide-react-native';
+import { CalendarDays, Phone, Receipt, Siren, Star } from '@/components/icons';
 import { useState } from 'react';
 import { View } from 'react-native';
 

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Car, Plus } from 'lucide-react-native';
+import { Car, Plus } from '@/components/icons';
 
 import { Button, EmptyState, ErrorState, Screen, SkeletonList, Text, VehicleCard } from '@/components';
 import { useVehicles } from '@/hooks/queries';

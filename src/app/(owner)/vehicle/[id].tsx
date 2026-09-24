@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { CalendarDays, Pencil, Siren, Stethoscope, Trash2 } from 'lucide-react-native';
+import { CalendarDays, Pencil, Siren, Stethoscope, Trash2 } from '@/components/icons';
 import { useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 

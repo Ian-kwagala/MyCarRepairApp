@@ -1,5 +1,5 @@
-import type { LucideIcon } from 'lucide-react-native';
-import { CircleAlert, WifiOff } from 'lucide-react-native';
+import type { LucideIcon } from '@/components/icons';
+import { CircleAlert, WifiOff } from '@/components/icons';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

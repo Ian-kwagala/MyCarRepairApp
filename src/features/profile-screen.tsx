@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Bell, ChevronRight, LifeBuoy, LogOut, Pencil, Settings, Star, Wrench } from 'lucide-react-native';
+import { Bell, ChevronRight, LifeBuoy, LogOut, Pencil, Settings, Star, Wrench } from '@/components/icons';
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
 

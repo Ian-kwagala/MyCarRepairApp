@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import type { LucideIcon } from 'lucide-react-native';
+import type { LucideIcon } from '@/components/icons';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Font, Radius, Space, Touch, useColors } from '@/theme';

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { BadgeCheck, Bell, Calendar, Car, CircleCheck, Package, Siren, ThumbsUp, Wrench, type LucideIcon } from 'lucide-react-native';
+import { BadgeCheck, Bell, Calendar, Car, CircleCheck, Package, Siren, ThumbsUp, Wrench, type LucideIcon } from '@/components/icons';
 import { Pressable, View } from 'react-native';
 
 import { EmptyState, Row, Section, Text } from '@/components';

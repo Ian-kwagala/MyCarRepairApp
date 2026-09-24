@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { CircleGauge, Disc3, Droplet, Wrench, type LucideIcon } from 'lucide-react-native';
+import { CircleGauge, Disc3, Droplet, Wrench, type LucideIcon } from '@/components/icons';
 import { useCallback, useState } from 'react';
 
 import { api } from '@/api';

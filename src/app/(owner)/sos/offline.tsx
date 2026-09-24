@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { MessageSquare, Phone, WifiOff } from 'lucide-react-native';
+import { MessageSquare, Phone, WifiOff } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Linking, View } from 'react-native';
 

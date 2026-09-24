@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Activity, Car, House, UserRound } from 'lucide-react-native';
+import { Activity, Car, House, UserRound } from '@/components/icons';
 
 import { useNotifications } from '@/hooks/use-notifications';
 import { Font, useColors } from '@/theme';

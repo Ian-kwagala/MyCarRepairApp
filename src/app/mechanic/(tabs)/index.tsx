@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Briefcase, CalendarDays, MapPinOff, Siren } from 'lucide-react-native';
+import { Briefcase, CalendarDays, MapPinOff, Siren } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 

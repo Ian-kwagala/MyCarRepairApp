@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Wallet } from 'lucide-react-native';
+import { Wallet } from '@/components/icons';
 import { useState } from 'react';
 import { View } from 'react-native';
 

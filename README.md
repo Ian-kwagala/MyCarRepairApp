@@ -30,6 +30,10 @@ scripts/build-apk.sh owner       # → dist/MyCarRepair-owner.apk
 scripts/build-apk.sh mechanic    # → dist/MCR-Mechanic.apk
 ```
 
+Each APK installs on any Android phone running Android 7.0 or newer: it carries native code for both 64-bit
+(`arm64-v8a`) and 32-bit (`armeabi-v7a`) phones. Emulator-only x86 builds are left out to keep the APK small
+(`ARCHS=armeabi-v7a,arm64-v8a,x86,x86_64` adds them).
+
 These APKs are signed with the Expo template's debug key, which is fine for testing but not for the Play
 Store. For store builds use `npx eas-cli@latest build --profile production` with `APP_VARIANT` set.
 

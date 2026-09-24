@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Camera, ImagePlus, Star, X, type LucideIcon } from 'lucide-react-native';
+import { Camera, ImagePlus, Star, X, type LucideIcon } from '@/components/icons';
 import { useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputProps, type TextStyle } from 'react-native';
 
@@ -91,6 +91,8 @@ export function Segmented<T extends string>({
             style={[styles.segmentItem, active && { backgroundColor: dark ? c.primary : c.surface }]}>
             <Text
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
               style={{
                 fontFamily: active ? Font.bold : Font.medium,
                 fontSize: 14,
