@@ -1,11 +1,12 @@
 import { router, useFocusEffect } from 'expo-router';
-import { BadgeCheck, ShieldCheck, Siren, Wrench } from 'lucide-react-native';
+import { BadgeCheck, CarFront, ClipboardList, ShieldCheck, Siren, Wallet, Wrench } from 'lucide-react-native';
 import { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { isLocalMode } from '@/api';
 import { Button, Text } from '@/components';
+import { APP_ROLE } from '@/constants/app-variant';
 import { useStatusBar } from '@/hooks/use-status-bar';
 import { Keys, kv } from '@/services/storage';
 import { Brand, Space } from '@/theme';
@@ -29,26 +30,45 @@ export default function Welcome() {
     }, []),
   );
 
-  const points = [
-    { icon: Siren, text: 'Emergency SOS to the nearest verified mechanic' },
-    { icon: BadgeCheck, text: 'Approve every spare part — photo and price — before it is billed' },
-    { icon: ShieldCheck, text: 'Track your repair live, task by task' },
-  ];
+  const mechanic = APP_ROLE === 'mechanic';
+  const points = mechanic
+    ? [
+        { icon: Siren, text: 'SOS and booking requests from car owners near you' },
+        { icon: ClipboardList, text: 'Digital job cards and photo quotes the owner approves in two taps' },
+        { icon: Wallet, text: 'Track your earnings and build your reputation with reviews' },
+      ]
+    : [
+        { icon: Siren, text: 'Emergency SOS to the nearest verified mechanic' },
+        { icon: BadgeCheck, text: 'Approve every spare part — photo and price — before it is billed' },
+        { icon: ShieldCheck, text: 'Track your repair live, task by task' },
+      ];
+  const LogoIcon = mechanic ? Wrench : CarFront;
 
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: Brand.navy }]}>
       <View style={styles.hero}>
         <View style={styles.logo}>
-          <Wrench size={40} color="#fff" strokeWidth={2.25} />
+          <LogoIcon size={40} color="#fff" strokeWidth={2.25} />
         </View>
-        <Text variant="display" style={{ color: '#fff' }}>
-          Trusted{'\n'}Mechanics,{'\n'}
-          <Text variant="display" style={{ color: Brand.orange }}>
-            Anytime.
+        {mechanic ? (
+          <Text variant="display" style={{ color: '#fff' }}>
+            Jobs near you,{'\n'}
+            <Text variant="display" style={{ color: Brand.orange }}>
+              every day.
+            </Text>
           </Text>
-        </Text>
+        ) : (
+          <Text variant="display" style={{ color: '#fff' }}>
+            Trusted{'\n'}Mechanics,{'\n'}
+            <Text variant="display" style={{ color: Brand.orange }}>
+              Anytime.
+            </Text>
+          </Text>
+        )}
         <Text style={{ color: '#cbd5e1', fontSize: 16, lineHeight: 23 }}>
-          Emergency help, transparent repairs and approved parts — in your pocket.
+          {mechanic
+            ? 'MCR Mechanic connects verified garages with car owners across Kampala.'
+            : 'Emergency help, transparent repairs and approved parts — in your pocket.'}
         </Text>
         <View style={{ gap: Space.md, marginTop: Space.md }}>
           {points.map(({ icon: Icon, text }) => (
@@ -60,7 +80,7 @@ export default function Welcome() {
         </View>
       </View>
       <View style={styles.actions}>
-        <Button title="Create account" onPress={() => router.push('/sign-up')} />
+        <Button title={mechanic ? 'Join as a mechanic' : 'Create account'} onPress={() => router.push('/sign-up')} />
         <Button
           title="I already have an account"
           kind="onDark"

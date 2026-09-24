@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { api } from '@/api';
 import { errorMessage } from '@/api/errors';
 import { Button, InlineNotice, Screen, Section, Segmented, Text, TextField } from '@/components';
+import { APP_ROLE } from '@/constants/app-variant';
 import { useSession } from '@/store/session';
 import { useColors } from '@/theme';
 
@@ -37,7 +38,7 @@ const schema = z
 export default function SignUp() {
   const c = useColors();
   const signIn = useSession((s) => s.signIn);
-  const [role, setRole] = useState<RoleOpt>('owner');
+  const [role, setRole] = useState<RoleOpt>(APP_ROLE ?? 'owner');
   const [form, setForm] = useState({ fullName: '', email: '', phone: '+256 ', password: '', garageName: '', garageLocation: '', expertise: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [show, setShow] = useState(false);
@@ -82,9 +83,11 @@ export default function SignUp() {
           </Text>
         </>
       }>
-      <Text variant="title">Create account</Text>
-      <Segmented options={['owner', 'mechanic'] as const} value={role} onChange={setRole} labels={{ owner: 'Car Owner', mechanic: 'Mechanic' }} />
-      <TextField label="Full name" value={form.fullName} onChangeText={set('fullName')} placeholder="Sarah Nakato" autoComplete="name" error={errors.fullName} />
+      <Text variant="title">{APP_ROLE === 'mechanic' ? 'Join as a mechanic' : 'Create account'}</Text>
+      {APP_ROLE ? null : (
+        <Segmented options={['owner', 'mechanic'] as const} value={role} onChange={setRole} labels={{ owner: 'Car Owner', mechanic: 'Mechanic' }} />
+      )}
+      <TextField label="Full name" value={form.fullName} onChangeText={set('fullName')} placeholder={role === 'mechanic' ? 'Joseph Okello' : 'Sarah Nakato'} autoComplete="name" error={errors.fullName} />
       <TextField label="Email" value={form.email} onChangeText={set('email')} placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" autoComplete="email" error={errors.email} />
       <TextField label="Phone" value={form.phone} onChangeText={set('phone')} placeholder="+256 772 111 222" keyboardType="phone-pad" autoComplete="tel" error={errors.phone} />
       <TextField

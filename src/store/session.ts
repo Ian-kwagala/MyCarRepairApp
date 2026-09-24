@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { api, realtime, type Session } from '@/api';
 import { isNetworkError } from '@/api/errors';
+import { APP_ROLE } from '@/constants/app-variant';
 import type { User } from '@/models';
 import { resetQueryCache } from '@/services/query-client';
 import { Keys, kv, secure } from '@/services/storage';
@@ -38,7 +39,8 @@ export const useSession = create<SessionState>((set, get) => ({
     } catch {
       session = null;
     }
-    if (!session) {
+    if (!session || (APP_ROLE && session.user.role !== APP_ROLE)) {
+      if (session) await persist(null);
       set({ status: 'signedOut', session: null });
       return;
     }

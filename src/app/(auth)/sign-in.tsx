@@ -6,6 +6,7 @@ import { Pressable, View } from 'react-native';
 import { api } from '@/api';
 import { errorMessage } from '@/api/errors';
 import { Button, InlineNotice, Screen, Segmented, Text, TextField } from '@/components';
+import { APP_ROLE } from '@/constants/app-variant';
 import { useSession } from '@/store/session';
 import { Space, useColors } from '@/theme';
 
@@ -15,7 +16,7 @@ type RoleOpt = 'owner' | 'mechanic';
 export default function SignIn() {
   const c = useColors();
   const signIn = useSession((s) => s.signIn);
-  const [role, setRole] = useState<RoleOpt>('owner');
+  const [role, setRole] = useState<RoleOpt>(APP_ROLE ?? 'owner');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
@@ -56,10 +57,12 @@ export default function SignIn() {
         </>
       }>
       <Text variant="title">Welcome back</Text>
-      <Text tone="textMuted">Sign in to MyCarRepair</Text>
-      <View style={{ marginTop: Space.md }}>
-        <Segmented options={['owner', 'mechanic'] as const} value={role} onChange={setRole} labels={{ owner: 'Car Owner', mechanic: 'Mechanic' }} />
-      </View>
+      <Text tone="textMuted">{APP_ROLE === 'mechanic' ? 'Sign in to your mechanic account' : 'Sign in to MyCarRepair'}</Text>
+      {APP_ROLE ? null : (
+        <View style={{ marginTop: Space.md }}>
+          <Segmented options={['owner', 'mechanic'] as const} value={role} onChange={setRole} labels={{ owner: 'Car Owner', mechanic: 'Mechanic' }} />
+        </View>
+      )}
       <TextField
         label="Phone or email"
         value={identifier}

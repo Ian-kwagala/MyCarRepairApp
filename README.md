@@ -10,6 +10,34 @@ TypeScript · Expo Router. One app, two role modes (owner / mechanic). The admin
 
 ---
 
+## Two apps: owner and mechanic
+
+The same codebase builds two separate Android apps; `APP_VARIANT` selects one at build time:
+
+| App | `APP_VARIANT` | Package | Icon |
+| --- | --- | --- | --- |
+| **MyCarRepair** (car owners) | `owner` | `ug.mycarrepair.app` | white car on orange |
+| **MCR Mechanic** (mechanics) | `mechanic` | `ug.mycarrepair.mechanic` | orange wrench on navy |
+
+Each app is locked to its role: there's no role toggle, and the welcome copy and icons are its own. Leaving
+`APP_VARIANT` unset gives a development build with both roles (the role toggle on sign-in).
+
+Build a sideloadable APK without EAS (needs JDK 17+ and an Android SDK with platform 36, build-tools 36 and
+NDK 27.1 at `ANDROID_HOME`):
+
+```bash
+scripts/build-apk.sh owner       # → dist/MyCarRepair-owner.apk
+scripts/build-apk.sh mechanic    # → dist/MCR-Mechanic.apk
+```
+
+These APKs are signed with the Expo template's debug key, which is fine for testing but not for the Play
+Store. For store builds use `npx eas-cli@latest build --profile production` with `APP_VARIANT` set.
+
+> **Local data mode and two apps:** until a backend is connected, each app keeps its data on its own phone, so
+> the owner app and the mechanic app can't see each other's jobs yet. Setting `EXPO_PUBLIC_API_URL` to the
+> shared backend connects them. To try both roles against each other before then, use the development build
+> (`npx expo start`), which has both roles in one app.
+
 ## Quick start
 
 ```bash
