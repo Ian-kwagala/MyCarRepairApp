@@ -21,12 +21,15 @@ export APP_VARIANT="$VARIANT" NODE_ENV=production CI=1
 
 # Metro caches transformed modules (including inlined config); start clean so variants never mix.
 rm -rf "${TMPDIR:-/tmp}"/metro-* "${TMPDIR:-/tmp}"/haste-map-* node_modules/.cache 2>/dev/null || true
-npx expo prebuild --platform android --clean --no-install
-echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 # prebuild rewrites the android/ios npm scripts; keep the Expo Go ones in package.json.
-git checkout -- package.json 2>/dev/null || true
+cp package.json "${TMPDIR:-/tmp}/package.json.prebuild-backup"
+npx expo prebuild --platform android --clean --no-install
+cp "${TMPDIR:-/tmp}/package.json.prebuild-backup" package.json
+echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-(cd android && ./gradlew assembleRelease -PreactNativeArchitectures="${ARCHS:-arm64-v8a,armeabi-v7a}" --console=plain)
+# arm64-v8a covers practically every Android phone sold since ~2019; add armeabi-v7a for older 32-bit
+# devices with ARCHS=arm64-v8a,armeabi-v7a (bigger APK).
+(cd android && ./gradlew assembleRelease -PreactNativeArchitectures="${ARCHS:-arm64-v8a}" --console=plain)
 
 mkdir -p dist
 cp android/app/build/outputs/apk/release/app-release.apk "dist/$OUT"

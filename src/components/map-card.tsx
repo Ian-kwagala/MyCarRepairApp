@@ -1,8 +1,14 @@
+import Constants from 'expo-constants';
 import { useEffect, useRef } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
 import { Brand, Radius } from '@/theme';
+
+import { MapFallback } from './map-fallback';
+
+/** Google Maps on Android needs an API key (MAPS_KEY at build time); iOS uses Apple Maps without one. */
+const mapsAvailable = Platform.OS !== 'android' || Constants.expoConfig?.extra?.mapsEnabled === true;
 
 export interface MapPoint {
   lat: number;
@@ -15,6 +21,11 @@ const colors: Record<MapPoint['kind'], string> = { me: Brand.blue, mechanic: Bra
 
 /** Live map card (SOS, mechanic tracking, route preview). */
 export function MapCard({ points, height = 220 }: { points: MapPoint[]; height?: number }) {
+  if (!mapsAvailable) return <MapFallback points={points} height={height} />;
+  return <NativeMap points={points} height={height} />;
+}
+
+function NativeMap({ points, height }: { points: MapPoint[]; height: number }) {
   const ref = useRef<MapView>(null);
   const valid = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
   const key = valid.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|');

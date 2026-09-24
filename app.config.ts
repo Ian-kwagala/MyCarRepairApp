@@ -108,6 +108,20 @@ const config: ExpoConfig = {
     ['expo-image-picker', { cameraPermission: 'The camera is used to photograph cars and parts as evidence.' }],
     ['expo-notifications', { color: '#F97316' }],
     ['expo-local-authentication', { faceIDPermission: 'Unlock the app quickly and securely.' }],
+    // Smaller APKs for sideloading and low-data installs (§11.1, NFR10 ≤ 35 MB): compressed native libraries,
+    // and R8 shrinking of unused Java/Kotlin code and resources. Obfuscation stays off (-dontobfuscate) so
+    // class names that libraries look up by reflection are never renamed.
+    [
+      'expo-build-properties',
+      {
+        android: {
+          useLegacyPackaging: true,
+          enableMinifyInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: true,
+          extraProguardRules: '-dontobfuscate',
+        },
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,
@@ -116,6 +130,8 @@ const config: ExpoConfig = {
   // Leave EXPO_PUBLIC_API_URL unset to run on the on-device local data store (see README).
   extra: {
     ...(VARIANT === 'all' ? {} : { appRole: VARIANT }),
+    // Native Google Maps only when a key is baked in; otherwise map cards fall back to links (map-card.tsx).
+    mapsEnabled: !!process.env.MAPS_KEY,
     ...(process.env.EXPO_PUBLIC_API_URL ? { apiUrl: process.env.EXPO_PUBLIC_API_URL } : {}),
   },
 };
