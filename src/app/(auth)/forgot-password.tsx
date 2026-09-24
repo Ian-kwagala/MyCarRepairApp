@@ -2,12 +2,14 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 
 import { api, type ForgotPasswordResult } from '@/api';
+import { useConfig } from '@/hooks/queries';
 import { errorMessage } from '@/api/errors';
 import { Button, InlineNotice, Screen, Text, TextField } from '@/components';
 import { toast } from '@/store/toast';
 
 /** A4 Forgot password / OTP. */
 export default function ForgotPassword() {
+  const config = useConfig();
   const [identifier, setIdentifier] = useState('');
   const [step, setStep] = useState<ForgotPasswordResult | null>(null);
   const [code, setCode] = useState('');
@@ -56,7 +58,11 @@ export default function ForgotPassword() {
         <>
           {step.verification === 'otp' ? (
             <>
-              <Text tone="textMuted">We sent a 6-digit code{step.destination ? ` to ${step.destination}` : ''}.</Text>
+              <Text tone="textMuted">
+                {step.channel === 'support'
+                  ? `Call MyCarRepair support on ${config.supportPhone}. After confirming it's you, they'll read you a 6-digit code (valid for 15 minutes).`
+                  : `We sent a 6-digit code${step.destination ? ` to ${step.destination}` : ''}.`}
+              </Text>
               <TextField label="Verification code" value={code} onChangeText={setCode} keyboardType="number-pad" maxLength={6} />
             </>
           ) : (

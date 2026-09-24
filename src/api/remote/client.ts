@@ -2,6 +2,8 @@
  * RemoteApiClient — the §7 contract over HTTPS: JSON, `Authorization: Bearer <accessToken>`,
  * refresh on 401, uniform error envelope `{ error: { code, message } }`, multipart for photos.
  */
+import { Platform } from 'react-native';
+
 import type {
   AppConfig,
   ChecklistItem,
@@ -42,19 +44,24 @@ type Body = Record<string, unknown> | FormData | undefined;
 
 const TIMEOUT_MS = 20_000;
 
-function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
+async function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
+  if (Platform.OS === 'web') {
+    // Browsers need a real Blob (the picker gives data: or blob: URIs).
+    form.append(field, await (await fetch(p.uri)).blob(), p.name);
+    return;
+  }
   // React Native FormData file part.
   form.append(field, { uri: p.uri, name: p.name, type: p.type } as unknown as Blob);
 }
 
-function toForm(fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>) {
+async function toForm(fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>) {
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) {
     if (v === undefined) continue;
     if (Array.isArray(v)) v.forEach((x) => form.append(`${k}[]`, String(x)));
     else form.append(k, v === null ? '' : String(v));
   }
-  for (const [k, list] of Object.entries(files)) list.forEach((p) => appendPhoto(form, k, p));
+  for (const [k, list] of Object.entries(files)) for (const p of list) await appendPhoto(form, k, p);
   return form;
 }
 
@@ -165,7 +172,8 @@ export class RemoteApiClient implements ApiClient {
   }
   async logout(pushToken?: string | null) {
     try {
-      await this.req('POST', '/auth/logout', { pushToken: pushToken ?? undefined });
+      // Revokes this device's refresh token and push token on the server.
+      await this.raw('POST', '/auth/logout', { pushToken: pushToken ?? undefined, refreshToken: this.tokens?.refreshToken ?? undefined }, false);
     } finally {
       this.setAuth(null);
     }
@@ -199,16 +207,17 @@ export class RemoteApiClient implements ApiClient {
   getVehicle(id: number) {
     return this.req<{ vehicle: Vehicle; recentJobs: Job[] }>('GET', `/vehicles/${id}`);
   }
-  createVehicle(input: VehicleCreate) {
+  async createVehicle(input: VehicleCreate) {
     const { photos, ...fields } = input;
-    return this.req<Vehicle>('POST', '/vehicles', toForm(fields as Record<string, unknown>, { photos }));
+    return this.req<Vehicle>('POST', '/vehicles', await toForm(fields as Record<string, unknown>, { photos }));
   }
-  updateVehicle(id: number, patch: VehicleUpdate) {
+  async updateVehicle(id: number, patch: VehicleUpdate) {
     const { newPhotos, keepPhotos, ...fields } = patch;
     return this.req<Vehicle>(
       'PATCH',
       `/vehicles/${id}`,
-      toForm({ ...fields, keepPhotos: keepPhotos ?? undefined } as Record<string, unknown>, { photos: newPhotos ?? [] }),
+      // keepPhotos goes as JSON so "keep none" ([]) is distinguishable from "unchanged" (absent).
+      await toForm({ ...fields, keepPhotos: keepPhotos ? JSON.stringify(keepPhotos) : undefined } as Record<string, unknown>, { photos: newPhotos ?? [] }),
     );
   }
   async deleteVehicle(id: number) {
@@ -219,9 +228,9 @@ export class RemoteApiClient implements ApiClient {
   createBooking(input: BookingInput) {
     return this.req<Job>('POST', '/jobs/bookings', { ...input });
   }
-  createDiagnostic(input: DiagnosticInput) {
+  async createDiagnostic(input: DiagnosticInput) {
     const { photo, ...fields } = input;
-    return this.req<Job>('POST', '/jobs/diagnostics', toForm(fields as Record<string, unknown>, { photo: photo ? [photo] : [] }));
+    return this.req<Job>('POST', '/jobs/diagnostics', await toForm(fields as Record<string, unknown>, { photo: photo ? [photo] : [] }));
   }
   sendSos(input: SosInput) {
     return this.req<SosResult>('POST', '/sos', { ...input });
@@ -265,18 +274,18 @@ export class RemoteApiClient implements ApiClient {
   markArrived(jobId: number) {
     return this.req<Job>('POST', `/mechanic/jobs/${jobId}/arrived`);
   }
-  updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }) {
+  async updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }) {
     return this.req<ChecklistItem>(
       'PATCH',
       `/mechanic/tasks/${taskId}`,
-      toForm({ isCompleted: input.isCompleted }, { photo: input.photo ? [input.photo] : [] }),
+      await toForm({ isCompleted: input.isCompleted }, { photo: input.photo ? [input.photo] : [] }),
     );
   }
-  createQuote(jobId: number, input: QuoteInput) {
+  async createQuote(jobId: number, input: QuoteInput) {
     return this.req<PartsQuote>(
       'POST',
       `/mechanic/jobs/${jobId}/quotes`,
-      toForm({ partName: input.partName, price: input.price }, { photos: input.photos }),
+      await toForm({ partName: input.partName, price: input.price }, { photos: input.photos }),
     );
   }
   completeJob(jobId: number) {

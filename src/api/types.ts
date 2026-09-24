@@ -121,8 +121,10 @@ export interface MechanicReview extends Review {
 }
 
 export interface ForgotPasswordResult {
-  /** 'otp' — a code was sent by SMS/email; 'phone' — confirm the registered phone number (local mode). */
+  /** 'otp' — a one-time code; 'phone' — confirm the registered phone number (local mode). */
   verification: 'otp' | 'phone';
+  /** Where the code comes from: 'sms' (sent to destination) or 'support' (read out by support after an ID check). */
+  channel?: 'sms' | 'support';
   destination?: string;
 }
 

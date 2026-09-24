@@ -74,6 +74,8 @@ export class LocalRealtime extends BaseRealtime {
 export class SocketRealtime extends BaseRealtime {
   private socket: Socket | null = null;
   private reconnectHandlers = new Set<() => void>();
+  /** Called when the server rejects the handshake token (expired access token → refresh it). */
+  onAuthError: (() => void) | null = null;
 
   constructor(private url: string) {
     super();
@@ -90,6 +92,9 @@ export class SocketRealtime extends BaseRealtime {
       reconnectionDelayMax: 15000, // exponential reconnect (§11.1)
     });
     for (const ev of EVENTS) socket.on(ev, (payload: RealtimePayload) => this.dispatch(ev, payload));
+    socket.on('connect_error', (err) => {
+      if (err.message === 'unauthorized') this.onAuthError?.();
+    });
     // On reconnect the app re-fetches the active job.
     socket.io.on('reconnect', () => this.reconnectHandlers.forEach((h) => h()));
     this.socket = socket;

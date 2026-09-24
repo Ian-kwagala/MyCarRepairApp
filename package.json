@@ -79,7 +79,8 @@
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/.expo/"
+      "/.expo/",
+      "/server/"
     ]
   }
 }
