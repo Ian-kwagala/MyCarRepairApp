@@ -1,5 +1,7 @@
 import Constants from 'expo-constants';
 
+import { setWebTokenPersistence } from '@/services/storage';
+
 import { LocalApiClient } from './local/client';
 import { LocalRealtime, SocketRealtime } from './realtime';
 import { RemoteApiClient } from './remote/client';
@@ -15,11 +17,17 @@ export type * from './types';
  */
 function resolveApiUrl(): string | null {
   const candidates: unknown[] = [process.env.EXPO_PUBLIC_API_URL, Constants.expoConfig?.extra?.apiUrl];
-  const url = candidates.find((c): c is string => typeof c === 'string' && /^https?:\/\//.test(c));
-  return url ?? null;
+  const url = candidates.find((c): c is string => typeof c === 'string' && c.length > 0);
+  if (!url) return null;
+  // Bearer tokens only travel over TLS; plain http is allowed in development builds only (§13.1).
+  if (url.startsWith('https://') || (__DEV__ && url.startsWith('http://'))) return url;
+  throw new Error(`EXPO_PUBLIC_API_URL must use https:// (got "${url}")`);
 }
 
 const apiUrl = resolveApiUrl();
+
+// Web + remote: keep tokens in memory only. Local mode keeps its whole store in browser storage anyway.
+setWebTokenPersistence(!apiUrl);
 
 export const localApi = apiUrl ? null : new LocalApiClient();
 

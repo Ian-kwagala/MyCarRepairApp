@@ -11,6 +11,7 @@ import { OfflineBanner } from '@/components/feedback';
 import { SOS_TIMEOUT_MS } from '@/constants/config';
 import { useConfig, useJob } from '@/hooks/queries';
 import { useKeepScreenOn } from '@/hooks/use-keep-awake';
+import { useStatusBar } from '@/hooks/use-status-bar';
 import { callPhone } from '@/services/location';
 import { queryClient } from '@/services/query-client';
 import { toast } from '@/store/toast';
@@ -32,6 +33,8 @@ export default function SosStatus() {
 
   const status = job.data?.status;
   const broadcasting = status === 'pending';
+  // Navy radar screen while searching; canvas once a mechanic is found.
+  useStatusBar(!job.data || broadcasting ? 'light' : 'auto');
 
   useEffect(() => {
     if (!job.data || !broadcasting) return;

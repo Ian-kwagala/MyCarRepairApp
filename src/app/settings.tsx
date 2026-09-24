@@ -1,5 +1,5 @@
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Bell, CalendarClock, Fingerprint, Globe, Shield, Trash2, UserX } from 'lucide-react-native';
+import { Bell, Fingerprint, Globe, Shield, Trash2, UserX } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Linking, Platform, Switch } from 'react-native';
 
@@ -57,13 +57,10 @@ export default function Settings() {
         <Card style={{ paddingVertical: Space.xs }}>
           <ListRow
             icon={Bell}
-            title={user?.role === 'mechanic' ? 'Job & SOS alerts' : 'Repair updates'}
-            subtitle="Quotes, arrivals, completion"
+            title={user?.role === 'mechanic' ? 'Job alerts' : 'Repair updates'}
+            subtitle="Pop-ups and phone notifications for quotes, arrivals and completion. History stays in Notifications."
             right={sw(prefs.notifyJobs, (v) => prefs.update({ notifyJobs: v }))}
           />
-          {user?.role === 'owner' ? (
-            <ListRow icon={CalendarClock} title="Service reminders" subtitle="When a car is due for service" right={sw(prefs.notifyReminders, (v) => prefs.update({ notifyReminders: v }))} />
-          ) : null}
           {Platform.OS !== 'web' ? <ListRow icon={Shield} title="System notification settings" onPress={() => Linking.openSettings()} /> : null}
         </Card>
       </Section>

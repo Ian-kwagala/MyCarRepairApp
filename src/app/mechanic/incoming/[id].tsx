@@ -10,6 +10,7 @@ import { Button, haptic, Text } from '@/components';
 import { INCOMING_SOS_SECONDS } from '@/constants/config';
 import { setIncomingOpen, usePresence } from '@/features/mechanic-presence';
 import { qk, useJob } from '@/hooks/queries';
+import { useStatusBar } from '@/hooks/use-status-bar';
 import { reverseGeocode } from '@/services/location';
 import { queryClient } from '@/services/query-client';
 import { Brand, Font, Space } from '@/theme';
@@ -17,6 +18,7 @@ import { distanceKm, etaMinutes, formatKm } from '@/utils/geo';
 
 /** M2 Incoming SOS — full screen, 30-s countdown, vibration; "Too late" state on 409. */
 export default function IncomingSos() {
+  useStatusBar('light');
   const insets = useSafeAreaInsets();
   const id = Number(useLocalSearchParams<{ id: string }>().id);
   const job = useJob(id, { live: true });

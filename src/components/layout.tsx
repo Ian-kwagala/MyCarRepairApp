@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useStatusBar } from '@/hooks/use-status-bar';
 import { Radius, Space, useColors } from '@/theme';
 
 import { IconButton } from './button';
@@ -81,6 +82,7 @@ export function Screen({
   const c = useColors();
   const insets = useSafeAreaInsets();
   const headerBg = header.dark ? c.header : c.background;
+  useStatusBar(header.dark ? 'light' : 'auto');
   const body = scroll ? (
     <ScrollView
       style={{ flex: 1 }}

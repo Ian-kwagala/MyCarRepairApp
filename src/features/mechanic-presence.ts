@@ -24,7 +24,10 @@ export const usePresence = create<PresenceState>((set) => ({
   setError: (locationError) => set({ locationError }),
 }));
 
-/** Push a fresh fix to the server now (used when going online). */
+/**
+ * Push a fresh fix to the server now. Used when going online: SOS dispatch needs the mechanic's
+ * position, so a permission denial or GPS failure is rethrown and aborts the status change.
+ */
 export async function shareLocationOnce() {
   try {
     const fix = await getCurrentFix();
@@ -32,12 +35,15 @@ export async function shareLocationOnce() {
     await api.updateLocation(fix);
   } catch (e) {
     usePresence.getState().setError(e instanceof Error ? e.message : 'Location unavailable');
+    throw e;
   }
 }
 
 /**
- * While Online (or on an accepted job) the mechanic's position is sent every 15 s (POST /me/location)
- * and relayed to the owner's live map. Stops when offline with no active job (§11, §13.1).
+ * While Online (or on an accepted job) and the app is open, the mechanic's position is sent every 15 s
+ * (POST /me/location) and relayed to the owner's live map. Stops when offline with no active job
+ * (§11, §13.1). Background updates (app closed / screen locked) need a background location task in a
+ * development build and are not implemented yet, so the UI only promises sharing while the app is open.
  */
 export function useLocationSharing(active: boolean) {
   const sub = useRef<Location.LocationSubscription | null>(null);

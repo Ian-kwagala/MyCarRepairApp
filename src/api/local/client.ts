@@ -64,8 +64,32 @@ import { toChecklistItem, toJob, toQuote, toReview, toUser, toVehicle } from './
 
 type Tokens = Pick<Session, 'accessToken' | 'refreshToken'>;
 
-const hash = (email: string, password: string) =>
-  Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `mcr:${email.toLowerCase()}:${password}`);
+/**
+ * Local-mode password verifier: per-user random salt + iterated SHA-256 (expo-crypto has no PBKDF2),
+ * stored as `sha256i$<iterations>$<salt>$<hash>`. The server keeps bcrypt; this never leaves the device.
+ */
+const HASH_ITERATIONS = 2000;
+
+const toHex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+async function derive(password: string, salt: string, iterations: number): Promise<string> {
+  let h = `${salt}:${password}`;
+  for (let i = 0; i < iterations; i++) {
+    h = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${h}:${salt}`);
+  }
+  return h;
+}
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = toHex(Crypto.getRandomBytes(16));
+  return `sha256i$${HASH_ITERATIONS}$${salt}$${await derive(password, salt, HASH_ITERATIONS)}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const [scheme, iter, salt, expected] = stored.split('$');
+  if (scheme !== 'sha256i' || !salt || !expected) return false;
+  return (await derive(password, salt, Number(iter))) === expected;
+}
 
 const token = () => `${Crypto.randomUUID()}${Crypto.randomUUID()}`.replace(/-/g, '');
 
@@ -202,8 +226,9 @@ export class LocalApiClient implements ApiClient {
         id: owner.id,
         fullName: owner.full_name,
         phone: reveal ? owner.phone : null,
-        locationLat: reveal || row.status === 'pending' ? owner.location_lat : null,
-        locationLng: reveal || row.status === 'pending' ? owner.location_lng : null,
+        // Exact location only for the counter-party of an accepted job (§13.1); open jobs expose distance only.
+        locationLat: reveal ? owner.location_lat : null,
+        locationLng: reveal ? owner.location_lng : null,
       };
     }
     job.checklist = db.job_checklists.filter((c) => c.job_id === row.id).sort((a, b) => a.id - b.id).map(toChecklistItem);
@@ -233,7 +258,7 @@ export class LocalApiClient implements ApiClient {
     if (input.password.length < 6) throw Errors.validation('Password must be at least 6 characters.');
     const phone = normalizePhone(input.phone);
     if (phone.replace(/\D/g, '').length < 9) throw Errors.validation('Enter a valid phone number.');
-    const pw = await hash(email, input.password);
+    const pw = await hashPassword(input.password);
     const session = await tx((db) => {
       if (db.users.some((u) => u.email === email)) throw Errors.conflict('EMAIL_TAKEN', 'An account with this email already exists.');
       const row: UserRow = {
@@ -268,7 +293,7 @@ export class LocalApiClient implements ApiClient {
     );
     const invalid = new ApiError('INVALID_CREDENTIALS', 'Incorrect email/phone or password.', 401);
     if (!user) throw invalid;
-    if ((await hash(user.email, input.password)) !== user.password) throw invalid;
+    if (!(await verifyPassword(input.password, user.password))) throw invalid;
     if (user.status === 'suspended') throw Errors.forbidden('Your account has been suspended. Contact support.');
     const session = await tx((db) => this.issueSession(db, db.users.find((u) => u.id === user.id)!));
     this.setAuth(session);
@@ -307,7 +332,7 @@ export class LocalApiClient implements ApiClient {
     const user = await read((db) => db.users.find((u) => u.email === id || u.phone === phone));
     if (!user) throw Errors.notFound('Account');
     if (user.phone !== code) throw Errors.validation('That phone number does not match this account.');
-    const pw = await hash(user.email, input.password);
+    const pw = await hashPassword(input.password);
     await tx((db) => {
       const u = db.users.find((x) => x.id === user.id)!;
       u.password = pw;

@@ -70,6 +70,38 @@ describe('LocalApiClient business rules', () => {
     expect(await code(owner.sendSos({ vehicleId: v.id, issue: 'Towing', ...KAMPALA }))).toBe('409 SOS_ALREADY_ACTIVE');
   });
 
+  it('hides the owner location from mechanics until the job is accepted', async () => {
+    const { owner, mech, v } = await setup();
+    const { jobId } = await owner.sendSos({ vehicleId: v.id, issue: 'Flat Tire', ...KAMPALA });
+    const open = await mech.getJob(jobId);
+    expect(open.owner?.locationLat).toBeNull();
+    expect(open.owner?.phone).toBeNull();
+    expect(open.distanceKm).toBeCloseTo(2.2, 0);
+    await mech.acceptJob(jobId);
+    const mine = await mech.getJob(jobId);
+    expect(mine.owner?.locationLat).toBeCloseTo(KAMPALA.lat, 4);
+  });
+
+  it('stores salted password verifiers and rejects wrong passwords', async () => {
+    await AsyncStorage.clear();
+    jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { LocalApiClient: Client } = require('@/api/local/client') as { LocalApiClient: typeof LocalApiClient };
+    const c = new Client();
+    await c.register({ fullName: 'A', email: 'a@x.ug', phone: '0700000011', password: 'secret1', role: 'owner' });
+    await c.register({ fullName: 'B', email: 'b@x.ug', phone: '0700000012', password: 'secret1', role: 'owner' });
+    // Read through the same (reset) module instance the client wrote to.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('@react-native-async-storage/async-storage');
+    const storage = (mod.default ?? mod) as typeof AsyncStorage;
+    const raw = JSON.parse((await storage.getItem('mcr.localdb.v1'))!) as { users: { password: string }[] };
+    const [a, b] = raw.users.map((u) => u.password);
+    expect(a).toMatch(/^sha256i\$2000\$[0-9a-f]{32}\$/);
+    expect(a).not.toEqual(b); // same password, different salt
+    expect(await code(c.login({ identifier: 'a@x.ug', password: 'wrong', role: 'owner' }))).toBe('401 INVALID_CREDENTIALS');
+    expect(await code(c.login({ identifier: 'a@x.ug', password: 'secret1', role: 'owner' }))).toBe('OK');
+  });
+
   it('SOS cancel sets status cancelled (not completed)', async () => {
     const { owner, v } = await setup();
     const { jobId } = await owner.sendSos({ vehicleId: v.id, issue: 'Dead Battery', ...KAMPALA });

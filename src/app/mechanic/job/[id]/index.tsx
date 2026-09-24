@@ -157,7 +157,9 @@ function EnRoute({ job, refetch }: { job: Job; refetch: () => void }) {
         <Button title="Call" icon={Phone} kind="secondary" size="md" style={{ flex: 1 }} onPress={() => callPhone(o?.phone)} disabled={!o?.phone} />
         <Button title="Maps" icon={Navigation} kind="info" size="md" style={{ flex: 1 }} onPress={() => dest && openNavigation(dest.lat, dest.lng)} disabled={!dest} />
       </Row>
-      <InlineNotice tone="info">Sharing your location with {o?.fullName?.split(' ')[0] ?? 'the owner'} every 15 s until the job is complete.</InlineNotice>
+      <InlineNotice tone="info">
+        Sharing your location with {o?.fullName?.split(' ')[0] ?? 'the owner'} every 15 s while MyCarRepair is open. Keep the app open on the way.
+      </InlineNotice>
     </Screen>
   );
 }

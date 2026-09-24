@@ -24,7 +24,7 @@ import {
 import { shareLocationOnce, usePresence } from '@/features/mechanic-presence';
 import { qk, useMechanicJobs, useMechanicStats } from '@/hooks/queries';
 import type { Job } from '@/models';
-import { openSettings } from '@/services/location';
+import { LocationPermissionError, openSettings } from '@/services/location';
 import { queryClient } from '@/services/query-client';
 import { Keys, kv } from '@/services/storage';
 import { useSession, useUser } from '@/store/session';
@@ -71,7 +71,11 @@ export default function JobBoard() {
       if (next) setTab('sos');
       void queryClient.invalidateQueries({ queryKey: ['mechanic'] });
     } catch (e) {
-      toast({ title: 'Could not change status', body: errorMessage(e), tone: 'danger' });
+      if (e instanceof LocationPermissionError) {
+        toast({ title: 'Location needed to go online', body: 'SOS alerts go to the nearest mechanics. Tap to open settings.', tone: 'warning', onPress: openSettings });
+      } else {
+        toast({ title: next ? 'Could not go online' : 'Could not go offline', body: errorMessage(e), tone: 'danger' });
+      }
     } finally {
       setToggling(false);
     }

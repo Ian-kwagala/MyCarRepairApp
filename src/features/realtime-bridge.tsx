@@ -9,6 +9,7 @@ import type { Job, RealtimeEvent, RealtimePayload } from '@/models';
 import { addNotification, describeEvent } from '@/services/notification-store';
 import { presentIfBackground } from '@/services/notifications';
 import { queryClient } from '@/services/query-client';
+import { usePrefs } from '@/store/prefs';
 import { useSession } from '@/store/session';
 import { toast } from '@/store/toast';
 
@@ -67,6 +68,8 @@ export function RealtimeBridge() {
       }
       const text = describeEvent(event, payload);
       const href = linkFor(role, event, payload);
+      // "Job alerts" off → no pop-ups or system notifications (history stays in the notification centre).
+      if (!usePrefs.getState().notifyJobs) return;
       if (text && TOAST_EVENTS.includes(event)) {
         toast({
           title: text.title,

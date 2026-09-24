@@ -11,7 +11,7 @@ export interface UserRow {
   id: number;
   full_name: string;
   email: string;
-  password: string; // salted SHA-256 (bcrypt on the server)
+  password: string; // sha256i$iterations$salt$hash (bcrypt on the server)
   phone: string | null;
   role: 'owner' | 'mechanic' | 'admin';
   status: 'active' | 'pending' | 'suspended';

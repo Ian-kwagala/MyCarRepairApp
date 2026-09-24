@@ -6,11 +6,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { isLocalMode } from '@/api';
 import { Button, Text } from '@/components';
+import { useStatusBar } from '@/hooks/use-status-bar';
 import { Keys, kv } from '@/services/storage';
 import { Brand, Space } from '@/theme';
 
 /** A1 Welcome — explain value; choose sign-up or sign-in. */
 export default function Welcome() {
+  useStatusBar('light');
   // Shown once: returning users go straight to sign-in (only when Welcome itself is on screen,
   // so deep links to /sign-up are not overridden).
   useFocusEffect(

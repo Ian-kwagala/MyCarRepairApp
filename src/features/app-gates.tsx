@@ -5,19 +5,27 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button, Text } from '@/components';
+import { useStatusBarOutsideNavigator } from '@/hooks/use-status-bar';
 import { useSession } from '@/store/session';
 import { Space, useColors } from '@/theme';
 
-/** Resolves true when unlocked (or when the device has no enrolled biometrics). */
+/**
+ * Resolves true when unlocked. Only a device with no biometric hardware or enrolment skips the check;
+ * any authentication error counts as a failed unlock (the user can still sign in with a password).
+ */
 async function authenticate(): Promise<boolean> {
+  let available: boolean;
   try {
-    const has = await LocalAuthentication.hasHardwareAsync();
-    const enrolled = await LocalAuthentication.isEnrolledAsync();
-    if (!has || !enrolled) return true;
+    available = (await LocalAuthentication.hasHardwareAsync()) && (await LocalAuthentication.isEnrolledAsync());
+  } catch {
+    return false;
+  }
+  if (!available) return true;
+  try {
     const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock MyCarRepair' });
     return res.success;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -28,6 +36,7 @@ export function LockScreen() {
   const signOut = useSession((s) => s.signOut);
   const name = useSession((s) => s.session?.user.fullName);
   const [error, setError] = useState<string | null>(null);
+  useStatusBarOutsideNavigator('light');
 
   const tryUnlock = useCallback(() => {
     authenticate().then((ok) => {
@@ -63,6 +72,7 @@ export function LockScreen() {
 /** Graceful maintenance screen (NFR06) — driven by the maintenance flag in GET /config. */
 export function MaintenanceScreen({ onRetry }: { onRetry: () => void }) {
   const c = useColors();
+  useStatusBarOutsideNavigator('light');
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.header }]}>
       <View style={styles.center}>

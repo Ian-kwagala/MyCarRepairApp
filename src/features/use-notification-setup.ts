@@ -23,7 +23,7 @@ export function useNotificationSetup() {
         const ok = await confirm(
           'Turn on alerts?',
           role === 'mechanic'
-            ? 'Get SOS jobs near you instantly, even when the app is closed, plus quote decisions from owners.'
+            ? 'Get alerted about SOS jobs near you and quote decisions from owners.'
             : 'Know the moment a mechanic is on the way, when a part needs your approval, and when your car is ready.',
           'Turn on',
         );
