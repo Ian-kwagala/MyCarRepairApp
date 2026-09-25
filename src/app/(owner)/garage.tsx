@@ -1,21 +1,25 @@
 import { router } from 'expo-router';
-import { Car, Plus } from 'lucide-react-native';
+import { Car, Plus } from '@/components/icons';
 
 import { Button, EmptyState, ErrorState, Screen, SkeletonList, Text, VehicleCard } from '@/components';
 import { useVehicles } from '@/hooks/queries';
 import { MAX_PHOTOS } from '@/constants/config';
 
+<<<<<<< HEAD:src/app/(owner)/(tabs)/garage.tsx
 // Owner Garage tab: the list of saved cars.
 
 /** O5 Virtual garage — cards with photos & service-due reminders. */
+=======
+/** O5 Virtual garage — cards with photos & service-due reminders. Opened from Home and Profile. */
+>>>>>>> a87e91d6465fdf63b3c8aa1b095f0cccde0d5e54:src/app/(owner)/garage.tsx
 export default function Garage() {
   const vehicles = useVehicles();
   const list = vehicles.data ?? [];
   return (
     <Screen
+      back
       title="My Garage"
       eyebrow={list.length ? `${list.length} vehicle${list.length > 1 ? 's' : ''}` : undefined}
-      inTabs
       refreshing={vehicles.isRefetching}
       onRefresh={() => vehicles.refetch()}
       right={list.length ? <Button title="Add" icon={Plus} size="sm" onPress={() => router.push('/vehicle/add')} /> : null}>

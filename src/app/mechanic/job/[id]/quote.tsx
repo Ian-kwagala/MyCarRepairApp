@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Send } from 'lucide-react-native';
+import { Send } from '@/components/icons';
 import { useState } from 'react';
 
 import { api } from '@/api';

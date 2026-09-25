@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Bell, Briefcase, UserRound, Wallet } from 'lucide-react-native';
+import { Bell, Briefcase, UserRound, Wallet } from '@/components/icons';
 
 import { useNotifications } from '@/hooks/use-notifications';
 import { Font, useColors } from '@/theme';

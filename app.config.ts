@@ -129,6 +129,7 @@ const config: ExpoConfig = {
         },
       },
     ],
+    './plugins/with-english-resources',
   ],
   // typedRoutes: type-checked route strings for expo-router; reactCompiler: automatic memoisation.
   experiments: {

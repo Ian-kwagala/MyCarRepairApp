@@ -1,11 +1,12 @@
-import type { LucideIcon } from 'lucide-react-native';
-import { CircleAlert, WifiOff } from 'lucide-react-native';
+import type { LucideIcon } from '@/components/icons';
+import { CircleAlert, Hourglass, WifiOff } from '@/components/icons';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorMessage, isNetworkError } from '@/api/errors';
 import { useOnline } from '@/hooks/use-online';
+import { useServerStatus } from '@/store/server-status';
 import { useToast } from '@/store/toast';
 import { Font, Radius, Space, useColors } from '@/theme';
 import type { Tone } from '@/utils/jobs';
@@ -128,12 +129,16 @@ export function SkeletonList({ count = 3, height = 84 }: { count?: number; heigh
 /** Orange strip saying the device is offline and cached data is shown. Hidden while online. */
 export function OfflineBanner() {
   const online = useOnline();
+  const waking = useServerStatus((s) => s.waking);
   const c = useColors();
-  if (online) return null;
+  if (online && !waking) return null;
+  const Icon = online ? Hourglass : WifiOff;
   return (
-    <View style={[styles.offline, { backgroundColor: c.warning }]} accessibilityLiveRegion="polite">
-      <WifiOff size={16} color="#fff" />
-      <Text style={{ color: '#fff', fontFamily: Font.semibold, fontSize: 13 }}>You are offline · showing saved data</Text>
+    <View style={[styles.offline, { backgroundColor: online ? c.info : c.warning }]} accessibilityLiveRegion="polite">
+      <Icon size={16} color="#fff" />
+      <Text style={{ color: '#fff', fontFamily: Font.semibold, fontSize: 13, flexShrink: 1 }}>
+        {online ? 'Connecting to MyCarRepair · this can take up to a minute' : 'You are offline · showing saved data'}
+      </Text>
     </View>
   );
 }

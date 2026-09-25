@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { api, realtime, type Session } from '@/api';
+import { SocketRealtime } from '@/api/realtime';
 import { isNetworkError } from '@/api/errors';
 import { APP_ROLE } from '@/constants/app-variant';
 import type { User } from '@/models';
@@ -120,9 +121,21 @@ api.onTokensChanged((tokens) => {
   const next = { ...session, ...tokens };
   void persist(next);
   useSession.setState({ session: next });
+  // The socket authenticates with the access token at connect time: reconnect with the new one.
+  realtime.connect(next);
 });
 
+<<<<<<< HEAD
 /** The signed-in user, or null. */
+=======
+// An expired token on the socket: any authenticated call refreshes it (401 → /auth/refresh → reconnect above).
+if (realtime instanceof SocketRealtime) {
+  realtime.onAuthError = () => {
+    if (useSession.getState().session) void api.me().catch(() => undefined);
+  };
+}
+
+>>>>>>> a87e91d6465fdf63b3c8aa1b095f0cccde0d5e54
 export function useUser(): User | null {
   return useSession((s) => s.session?.user ?? null);
 }

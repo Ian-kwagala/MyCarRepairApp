@@ -2,6 +2,8 @@
  * RemoteApiClient — the §7 contract over HTTPS: JSON, `Authorization: Bearer <accessToken>`,
  * refresh on 401, uniform error envelope `{ error: { code, message } }`, multipart for photos.
  */
+import { Platform } from 'react-native';
+
 import type {
   AppConfig,
   ChecklistItem,
@@ -14,6 +16,8 @@ import type {
   User,
   Vehicle,
 } from '@/models';
+
+import { setServerWaking } from '@/store/server-status';
 
 import { ApiError, Errors } from '../errors';
 import type {
@@ -42,25 +46,44 @@ type Body = Record<string, unknown> | FormData | undefined;
 
 /** Requests taking longer than this are aborted and reported as a network error. */
 const TIMEOUT_MS = 20_000;
+// The server sleeps after 15 min idle (free hosting) and takes up to a minute to wake. Until a response shows it
+// is awake, requests wait longer, and after a few seconds the app shows a "waking up" banner.
+const WAKE_TIMEOUT_MS = 75_000;
+const AWAKE_FOR_MS = 10 * 60_000;
+const SLOW_AFTER_MS = 4_000;
+let lastResponseAt = 0;
 
+<<<<<<< HEAD
 /** Adds a photo file to a multipart form under `field`. */
 function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
+=======
+async function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
+  if (Platform.OS === 'web') {
+    // Browsers need a real Blob (the picker gives data: or blob: URIs).
+    form.append(field, await (await fetch(p.uri)).blob(), p.name);
+    return;
+  }
+>>>>>>> a87e91d6465fdf63b3c8aa1b095f0cccde0d5e54
   // React Native FormData file part.
   form.append(field, { uri: p.uri, name: p.name, type: p.type } as unknown as Blob);
 }
 
+<<<<<<< HEAD
 /**
  * Builds a multipart form from plain fields plus photo files. Undefined fields are skipped, null becomes
  * an empty string, and arrays are sent as repeated `key[]` entries.
  */
 function toForm(fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>) {
+=======
+async function toForm(fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>) {
+>>>>>>> a87e91d6465fdf63b3c8aa1b095f0cccde0d5e54
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) {
     if (v === undefined) continue;
     if (Array.isArray(v)) v.forEach((x) => form.append(`${k}[]`, String(x)));
     else form.append(k, v === null ? '' : String(v));
   }
-  for (const [k, list] of Object.entries(files)) list.forEach((p) => appendPhoto(form, k, p));
+  for (const [k, list] of Object.entries(files)) for (const p of list) await appendPhoto(form, k, p);
   return form;
 }
 
@@ -124,15 +147,20 @@ export class RemoteApiClient implements ApiClient {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
     }
+    const cold = Date.now() - lastResponseAt > AWAKE_FOR_MS;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), cold ? WAKE_TIMEOUT_MS : TIMEOUT_MS);
+    const slow = cold ? setTimeout(() => setServerWaking(true), SLOW_AFTER_MS) : undefined;
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, { method, headers, body: payload, signal: ctrl.signal });
+      lastResponseAt = Date.now();
     } catch {
       throw Errors.network();
     } finally {
       clearTimeout(timer);
+      clearTimeout(slow);
+      setServerWaking(false);
     }
     if (res.status === 204) return undefined;
     // Parse leniently: an empty or non-JSON body (e.g. a proxy error page) becomes undefined.
@@ -192,7 +220,8 @@ export class RemoteApiClient implements ApiClient {
   async logout(pushToken?: string | null) {
     // Sends the push token so the server stops notifying this device. Signs out locally even if the call fails.
     try {
-      await this.req('POST', '/auth/logout', { pushToken: pushToken ?? undefined });
+      // Revokes this device's refresh token and push token on the server.
+      await this.raw('POST', '/auth/logout', { pushToken: pushToken ?? undefined, refreshToken: this.tokens?.refreshToken ?? undefined }, false);
     } finally {
       this.setAuth(null);
     }
@@ -227,17 +256,22 @@ export class RemoteApiClient implements ApiClient {
   getVehicle(id: number) {
     return this.req<{ vehicle: Vehicle; recentJobs: Job[] }>('GET', `/vehicles/${id}`);
   }
-  createVehicle(input: VehicleCreate) {
+  async createVehicle(input: VehicleCreate) {
     const { photos, ...fields } = input;
-    return this.req<Vehicle>('POST', '/vehicles', toForm(fields as Record<string, unknown>, { photos }));
+    return this.req<Vehicle>('POST', '/vehicles', await toForm(fields as Record<string, unknown>, { photos }));
   }
+<<<<<<< HEAD
   updateVehicle(id: number, patch: VehicleUpdate) {
     // keepPhotos lists existing photo URLs to keep; newPhotos are uploaded as files.
+=======
+  async updateVehicle(id: number, patch: VehicleUpdate) {
+>>>>>>> a87e91d6465fdf63b3c8aa1b095f0cccde0d5e54
     const { newPhotos, keepPhotos, ...fields } = patch;
     return this.req<Vehicle>(
       'PATCH',
       `/vehicles/${id}`,
-      toForm({ ...fields, keepPhotos: keepPhotos ?? undefined } as Record<string, unknown>, { photos: newPhotos ?? [] }),
+      // keepPhotos goes as JSON so "keep none" ([]) is distinguishable from "unchanged" (absent).
+      await toForm({ ...fields, keepPhotos: keepPhotos ? JSON.stringify(keepPhotos) : undefined } as Record<string, unknown>, { photos: newPhotos ?? [] }),
     );
   }
   async deleteVehicle(id: number) {
@@ -248,9 +282,9 @@ export class RemoteApiClient implements ApiClient {
   createBooking(input: BookingInput) {
     return this.req<Job>('POST', '/jobs/bookings', { ...input });
   }
-  createDiagnostic(input: DiagnosticInput) {
+  async createDiagnostic(input: DiagnosticInput) {
     const { photo, ...fields } = input;
-    return this.req<Job>('POST', '/jobs/diagnostics', toForm(fields as Record<string, unknown>, { photo: photo ? [photo] : [] }));
+    return this.req<Job>('POST', '/jobs/diagnostics', await toForm(fields as Record<string, unknown>, { photo: photo ? [photo] : [] }));
   }
   sendSos(input: SosInput) {
     return this.req<SosResult>('POST', '/sos', { ...input });
@@ -294,18 +328,18 @@ export class RemoteApiClient implements ApiClient {
   markArrived(jobId: number) {
     return this.req<Job>('POST', `/mechanic/jobs/${jobId}/arrived`);
   }
-  updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }) {
+  async updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }) {
     return this.req<ChecklistItem>(
       'PATCH',
       `/mechanic/tasks/${taskId}`,
-      toForm({ isCompleted: input.isCompleted }, { photo: input.photo ? [input.photo] : [] }),
+      await toForm({ isCompleted: input.isCompleted }, { photo: input.photo ? [input.photo] : [] }),
     );
   }
-  createQuote(jobId: number, input: QuoteInput) {
+  async createQuote(jobId: number, input: QuoteInput) {
     return this.req<PartsQuote>(
       'POST',
       `/mechanic/jobs/${jobId}/quotes`,
-      toForm({ partName: input.partName, price: input.price }, { photos: input.photos }),
+      await toForm({ partName: input.partName, price: input.price }, { photos: input.photos }),
     );
   }
   completeJob(jobId: number) {

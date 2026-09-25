@@ -1,5 +1,5 @@
 import { Link, router } from 'expo-router';
-import { Eye, EyeOff } from 'lucide-react-native';
+import { Eye, EyeOff } from '@/components/icons';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 

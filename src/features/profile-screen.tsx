@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Bell, ChevronRight, LifeBuoy, LogOut, Pencil, Settings, Star, Wrench } from 'lucide-react-native';
+import { Bell, Car, ChevronRight, LifeBuoy, LogOut, Pencil, Settings, Star, Wrench } from '@/components/icons';
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
 
@@ -62,6 +62,9 @@ export function ProfileScreen({ children }: { children?: ReactNode }) {
       {children}
 
       <Card style={{ paddingVertical: Space.xs }}>
+        {mechanic ? null : (
+          <ListRow icon={Car} title="My garage" subtitle="Your cars, photos and service reminders" onPress={() => router.push('/garage')} right={chevron} />
+        )}
         <ListRow icon={Pencil} title="Edit profile" subtitle={mechanic ? 'Name, phone, garage & expertise' : 'Name and phone'} onPress={() => router.push('/account/edit')} right={chevron} />
         <ListRow
           icon={Bell}

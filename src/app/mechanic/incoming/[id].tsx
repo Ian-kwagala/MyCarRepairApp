@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { BellRing, MapPin } from 'lucide-react-native';
+import { BellRing, MapPin } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Animated, Easing, Platform, StyleSheet, Vibration, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

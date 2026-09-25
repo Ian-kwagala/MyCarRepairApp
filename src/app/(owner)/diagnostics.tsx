@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Lightbulb, ThermometerSun, TriangleAlert, Volume2, Wind, type LucideIcon } from 'lucide-react-native';
+import { Lightbulb, ThermometerSun, TriangleAlert, Volume2, Wind, type LucideIcon } from '@/components/icons';
 import { useCallback, useState } from 'react';
 
 import { api } from '@/api';

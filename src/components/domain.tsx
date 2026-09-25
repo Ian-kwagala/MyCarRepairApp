@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Camera, Car, Check, ChevronRight, Lock } from 'lucide-react-native';
+import { Camera, Car, Check, ChevronRight, Lock } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 
@@ -43,7 +43,12 @@ export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist'> 
               </View>
               <View style={[styles.line, { backgroundColor: i === STAGES.length - 1 ? 'transparent' : i < idx ? c.success : c.border }]} />
             </View>
-            <Text variant="caption" style={{ fontFamily: current ? Font.bold : Font.medium, color: done ? c.text : c.textSubtle }}>
+            <Text
+              variant="caption"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              style={{ fontFamily: current ? Font.bold : Font.medium, color: done ? c.text : c.textSubtle, paddingHorizontal: 1 }}>
               {s}
             </Text>
           </View>

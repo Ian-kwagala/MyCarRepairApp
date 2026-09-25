@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    // Business rules and constants are shared with the mobile app (single source of truth).
+    "paths": { "@/*": ["../src/*"] }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

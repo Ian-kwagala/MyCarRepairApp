@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Car } from 'lucide-react-native';
+import { Car } from '@/components/icons';
 import { useEffect } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 

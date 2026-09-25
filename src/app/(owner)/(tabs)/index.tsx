@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { Bell, CalendarDays, ChevronRight, MapPin, Plus, Siren, Stethoscope } from 'lucide-react-native';
+import { Bell, CalendarDays, ChevronRight, MapPin, Plus, Siren, Stethoscope } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 

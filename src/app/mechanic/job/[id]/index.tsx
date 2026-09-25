@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { CircleCheck, FileText, Lock, MapPinned, Navigation, Phone, Plus, Share2, Star } from 'lucide-react-native';
+import { CircleCheck, FileText, Lock, MapPinned, Navigation, Phone, Plus, Share2, Star } from '@/components/icons';
 import { useState } from 'react';
 import { View } from 'react-native';
 

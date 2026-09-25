@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Briefcase, CalendarDays, MapPinOff, Siren } from 'lucide-react-native';
+import { Briefcase, CalendarDays, MapPinOff, Siren } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
@@ -222,30 +222,37 @@ export default function JobBoard() {
 /** An open SOS or booking with its distance, owner, car and date, and Accept / Skip (or Decline) buttons. */
 function OpenJobCard({ job, onAccept, onSkip, busy }: { job: Job; onAccept: () => void; onSkip: () => void; busy: boolean }) {
   const c = useColors();
+  // Only the details area opens the job; the action buttons sit outside it (no button inside a button).
   return (
-    <Card style={{ gap: Space.sm }} onPress={() => router.push(`/mechanic/job/${job.id}`)} accessibilityLabel={`${job.serviceType}, ${formatKm(job.distanceKm)}`}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Row gap={Space.sm} style={{ flex: 1 }}>
-          {job.sosActive ? <Siren size={18} color={c.danger} /> : <CalendarDays size={18} color={c.info} />}
-          <Text variant="heading" numberOfLines={1} style={{ flexShrink: 1 }}>
-            {job.serviceType}
-          </Text>
+    <Card style={{ gap: Space.sm }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${job.serviceType}, ${formatKm(job.distanceKm)}. Open details`}
+        onPress={() => router.push(`/mechanic/job/${job.id}`)}
+        style={({ pressed }) => ({ gap: Space.sm, opacity: pressed ? 0.8 : 1 })}>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Row gap={Space.sm} style={{ flex: 1 }}>
+            {job.sosActive ? <Siren size={18} color={c.danger} /> : <CalendarDays size={18} color={c.info} />}
+            <Text variant="heading" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {job.serviceType}
+            </Text>
+          </Row>
+          {job.distanceKm != null ? (
+            <Text variant="bodyStrong">{formatKm(job.distanceKm)}</Text>
+          ) : job.sosActive ? (
+            <StatusPill label="SOS" tone="danger" />
+          ) : null}
         </Row>
-        {job.distanceKm != null ? (
-          <Text variant="bodyStrong">{formatKm(job.distanceKm)}</Text>
-        ) : job.sosActive ? (
-          <StatusPill label="SOS" tone="danger" />
-        ) : null}
-      </Row>
-      <Text tone="textMuted">
-        {job.owner?.fullName ?? 'Owner'} · {job.vehicle ? `${vehicleLabel(job.vehicle)} ${job.vehicle.year}` : 'Vehicle'}
-      </Text>
-      {job.scheduledDate ? (
-        <Text variant="caption">
-          For {formatDate(job.scheduledDate, { weekday: 'short', day: 'numeric', month: 'short' })}
-          {job.notes ? ` · “${job.notes}”` : ''}
+        <Text tone="textMuted">
+          {job.owner?.fullName ?? 'Owner'} · {job.vehicle ? `${vehicleLabel(job.vehicle)} ${job.vehicle.year}` : 'Vehicle'}
         </Text>
-      ) : null}
+        {job.scheduledDate ? (
+          <Text variant="caption">
+            For {formatDate(job.scheduledDate, { weekday: 'short', day: 'numeric', month: 'short' })}
+            {job.notes ? ` · “${job.notes}”` : ''}
+          </Text>
+        ) : null}
+      </Pressable>
       <Row gap={Space.sm} style={{ marginTop: Space.xs }}>
         <Button title={job.sosActive ? 'Skip' : 'Decline'} kind="secondary" size="md" style={{ flex: 1 }} onPress={onSkip} disabled={busy} />
         <Button title="Accept" kind={job.sosActive ? 'danger' : 'primary'} size="md" style={{ flex: 1 }} onPress={onAccept} loading={busy} />

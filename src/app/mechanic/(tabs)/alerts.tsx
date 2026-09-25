@@ -1,4 +1,4 @@
-import { CheckCheck } from 'lucide-react-native';
+import { CheckCheck } from '@/components/icons';
 
 import { Button, Screen } from '@/components';
 import { NotificationList } from '@/features/notification-list';

@@ -1,12 +1,16 @@
 import { Tabs } from 'expo-router';
-import { Activity, Car, House, UserRound } from 'lucide-react-native';
+import { Activity, House, UserRound } from '@/components/icons';
 
 import { useNotifications } from '@/hooks/use-notifications';
 import { Font, useColors } from '@/theme';
 
+<<<<<<< HEAD
 // Bottom tab bar for car owners.
 
 /** Owner tabs: Home · Garage · Activity · Profile (§9). The Profile tab shows the unread-notification count. */
+=======
+/** Owner tabs: Home · Activity · Profile. The garage opens from Home and Profile. */
+>>>>>>> a87e91d6465fdf63b3c8aa1b095f0cccde0d5e54
 export default function OwnerTabs() {
   const c = useColors();
   const { unread } = useNotifications();
@@ -20,7 +24,6 @@ export default function OwnerTabs() {
         tabBarLabelStyle: { fontFamily: Font.semibold, fontSize: 12, paddingBottom: 4 },
       }}>
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color }) => <House color={color} size={24} /> }} />
-      <Tabs.Screen name="garage" options={{ title: 'Garage', tabBarIcon: ({ color }) => <Car color={color} size={24} /> }} />
       <Tabs.Screen name="activity" options={{ title: 'Activity', tabBarIcon: ({ color }) => <Activity color={color} size={24} /> }} />
       <Tabs.Screen
         name="profile"
