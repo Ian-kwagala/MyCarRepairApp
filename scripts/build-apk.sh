@@ -7,6 +7,7 @@
 # (use `eas build --profile production` for store builds).
 set -euo pipefail
 
+# Pick the output file name from the variant argument; anything else prints usage and exits.
 VARIANT="${1:-}"
 case "$VARIANT" in
   owner) OUT="MyCarRepair-owner.apk" ;;
@@ -14,6 +15,7 @@ case "$VARIANT" in
   *) echo "usage: $0 owner|mechanic" >&2; exit 1 ;;
 esac
 
+# Run from the repo root; APP_VARIANT is read by app.config.ts to choose the app identity.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export APP_VARIANT="$VARIANT" NODE_ENV=production CI=1
@@ -31,6 +33,7 @@ echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 # devices with ARCHS=arm64-v8a,armeabi-v7a (bigger APK).
 (cd android && ./gradlew assembleRelease -PreactNativeArchitectures="${ARCHS:-arm64-v8a}" --console=plain)
 
+# Copy the finished APK into dist/ under the variant's name.
 mkdir -p dist
 cp android/app/build/outputs/apk/release/app-release.apk "dist/$OUT"
 echo "Built dist/$OUT"

@@ -13,8 +13,13 @@ import type { Tone } from '@/utils/jobs';
 import { Button } from './button';
 import { Text } from './text';
 
+// Components that tell the user what's going on: status pills, empty/error/loading states, notices,
+// the offline banner, toasts and progress bars.
+
+/** Small rounded uppercase badge, e.g. a job status. */
 export function StatusPill({ label, tone = 'neutral' }: { label: string; tone?: Tone }) {
   const c = useColors();
+  // [background, text colour] for each tone.
   const map: Record<Tone, [string, string]> = {
     info: [c.infoSoft, c.info],
     warning: [c.warningSoft, c.warning],
@@ -31,6 +36,7 @@ export function StatusPill({ label, tone = 'neutral' }: { label: string; tone?: 
   );
 }
 
+/** Placeholder for an empty list: icon, title, optional explanation and optional action button. */
 export function EmptyState({
   icon: Icon,
   title,
@@ -61,6 +67,7 @@ export function EmptyState({
   );
 }
 
+/** Red error box with a friendly message (a Wi-Fi icon for connection errors) and an optional Retry button. */
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const c = useColors();
   return (
@@ -76,6 +83,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   );
 }
 
+/** Tinted one-line message box with an icon, for tips and warnings inside a screen. */
 export function InlineNotice({ icon: Icon = CircleAlert, children, tone = 'info' }: { icon?: LucideIcon; children: ReactNode; tone?: 'info' | 'warning' | 'danger' | 'success' }) {
   const c = useColors();
   const bg = { info: c.infoSoft, warning: c.warningSoft, danger: c.dangerSoft, success: c.successSoft }[tone];
@@ -92,6 +100,7 @@ export function InlineNotice({ icon: Icon = CircleAlert, children, tone = 'info'
 export function Skeleton({ height = 72, width = '100%', radius = Radius.card }: { height?: number; width?: DimensionValue; radius?: number }) {
   const c = useColors();
   const [opacity] = useState(() => new Animated.Value(0.5));
+  // Gently pulse the placeholder's opacity until it unmounts.
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -105,6 +114,7 @@ export function Skeleton({ height = 72, width = '100%', radius = Radius.card }: 
   return <Animated.View style={{ height, width, borderRadius: radius, backgroundColor: c.surfaceAlt, opacity }} />;
 }
 
+/** A stack of loading placeholders for a list. */
 export function SkeletonList({ count = 3, height = 84 }: { count?: number; height?: number }) {
   return (
     <View style={{ gap: Space.md }} accessibilityLabel="Loading">
@@ -115,6 +125,7 @@ export function SkeletonList({ count = 3, height = 84 }: { count?: number; heigh
   );
 }
 
+/** Orange strip saying the device is offline and cached data is shown. Hidden while online. */
 export function OfflineBanner() {
   const online = useOnline();
   const c = useColors();
@@ -127,6 +138,10 @@ export function OfflineBanner() {
   );
 }
 
+/**
+ * Renders the toasts from the toast store at the top of the screen. Mounted once in the root layout.
+ * Tapping a toast closes it and runs its action.
+ */
 export function ToastHost() {
   const toasts = useToast((s) => s.toasts);
   const dismiss = useToast((s) => s.dismiss);
@@ -155,6 +170,7 @@ export function ToastHost() {
   );
 }
 
+/** Horizontal progress bar; `pct` is clamped to 0–100. */
 export function ProgressBar({ pct, color }: { pct: number; color?: string }) {
   const c = useColors();
   return (

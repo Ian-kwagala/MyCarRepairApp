@@ -12,7 +12,13 @@ import { Space, useColors } from '@/theme';
 import { confirm } from '@/utils/confirm';
 import { formatDate } from '@/utils/format';
 
-/** Profile tab for both roles: account, notifications, settings, help, sign out (logout lives here, §10.1). */
+// Shared Profile tab, used by both the owner and mechanic apps.
+
+/**
+ * Profile tab for both roles: account, notifications, settings, help, sign out (logout lives here, §10.1).
+ * Mechanics also see their garage details and reviews. `children` is shown under the account card for
+ * role-specific extras.
+ */
 export function ProfileScreen({ children }: { children?: ReactNode }) {
   const c = useColors();
   const user = useUser();

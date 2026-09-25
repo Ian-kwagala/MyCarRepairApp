@@ -1,6 +1,14 @@
+// Data model types shared by the whole app: users, vehicles, jobs, quotes, reviews, config, notifications.
 // Blueprint Appendix A.1 — mirrors the existing PostgreSQL tables 1:1 (camelCase over the wire).
+
+/** Who a user is. Admins use the web dashboard, not this app. */
 export type Role = 'owner' | 'mechanic' | 'admin';
+/** New mechanics stay "pending" until an admin approves them. */
 export type UserStatus = 'active' | 'pending' | 'suspended';
+/**
+ * Lifecycle of a job, in order: pending (waiting for a mechanic) → accepted → diagnosing → fixing →
+ * ready → completed. A job can be cancelled instead of completing.
+ */
 export type JobStatus =
   | 'pending'
   | 'accepted'
@@ -12,6 +20,7 @@ export type JobStatus =
 export type FuelType = 'Petrol' | 'Diesel' | 'Hybrid' | 'Electric';
 export type Transmission = 'Automatic' | 'Manual';
 
+/** A car owner or mechanic account. The garage/expertise fields are only set for mechanics. */
 export interface User {
   // users
   id: number;
@@ -29,6 +38,7 @@ export interface User {
   createdAt: string;
 }
 
+/** A car in an owner's garage. */
 export interface Vehicle {
   // vehicles
   id: number;
@@ -47,6 +57,7 @@ export interface Vehicle {
   createdAt: string;
 }
 
+/** The mechanic's public details as attached to a job the owner can see. */
 export type JobMechanic = Pick<User, 'id' | 'fullName' | 'phone' | 'garageName'> & {
   rating: number;
   // Revealed only to the counter-party of an accepted job (§13.1), for the live map.
@@ -54,11 +65,16 @@ export type JobMechanic = Pick<User, 'id' | 'fullName' | 'phone' | 'garageName'>
   locationLng?: number | null;
 };
 
+/** The owner's details as attached to a job the mechanic can see. */
 export type JobOwner = Pick<User, 'id' | 'fullName' | 'phone'> & {
   locationLat?: number | null;
   locationLng?: number | null;
 };
 
+/**
+ * A repair job: either an SOS roadside request (`sosActive`) or a booked service. Optional fields are only
+ * filled in by the endpoints noted beside them.
+ */
 export interface Job {
   // jobs
   id: number;
@@ -88,6 +104,7 @@ export interface Job {
   notes?: string | null;
 }
 
+/** One task on a job's checklist, ticked off by the mechanic (optionally with a photo). */
 export interface ChecklistItem {
   // job_checklists
   id: number;
@@ -98,6 +115,7 @@ export interface ChecklistItem {
   completedAt: string | null;
 }
 
+/** A part the mechanic wants to fit, with a price the owner must approve or reject. */
 export interface PartsQuote {
   // parts_quotes
   id: number;
@@ -109,6 +127,7 @@ export interface PartsQuote {
   createdAt: string;
 }
 
+/** An owner's 1–5 star rating of the mechanic after a completed job. */
 export interface Review {
   // reviews
   id: number;
@@ -120,6 +139,7 @@ export interface Review {
   createdAt: string;
 }
 
+/** Server-controlled settings (GET /config): fee, picker lists, maintenance mode, minimum app version. */
 export interface AppConfig {
   serviceFee: number;
   sosIssues: string[];
@@ -130,12 +150,14 @@ export interface AppConfig {
   supportPhone: string;
 }
 
+/** Summary numbers on the mechanic's dashboard. */
 export interface MechanicStats {
   totalJobs: number;
   activeJobs: number;
   rating: number;
 }
 
+/** A mechanic's earnings: totals, a per-day series for the chart, and the list of paid jobs. */
 export interface Earnings {
   total: number;
   today: number;
@@ -151,6 +173,7 @@ export interface LocalPhoto {
   type: string;
 }
 
+/** Names of the live events the server pushes to the app (over sockets, or the local event bus). */
 export type RealtimeEvent =
   | 'new_job_pushed'
   | 'job_unavailable'
@@ -164,6 +187,7 @@ export type RealtimeEvent =
   | 'job_finished'
   | 'mechanic_approved';
 
+/** Data that comes with a realtime event; which fields are set depends on the event. */
 export interface RealtimePayload {
   jobId?: number;
   quoteId?: number;
@@ -172,6 +196,7 @@ export interface RealtimePayload {
   [key: string]: unknown;
 }
 
+/** An entry in the in-app notification list, stored on the device per user. */
 export interface AppNotification {
   id: string;
   userId: number;

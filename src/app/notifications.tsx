@@ -6,7 +6,9 @@ import { useNotifications } from '@/hooks/use-notifications';
 import { markAllRead } from '@/services/notification-store';
 import { useUser } from '@/store/session';
 
-/** O13 Notifications. */
+// Notification history screen (opened from the bell icon or the Profile tab).
+
+/** O13 Notifications, with a "Mark all read" button while any are unread. */
 export default function Notifications() {
   const user = useUser();
   const { items, unread, reload } = useNotifications();

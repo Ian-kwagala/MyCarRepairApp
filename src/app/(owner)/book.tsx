@@ -12,6 +12,9 @@ import { toast } from '@/store/toast';
 import { Space } from '@/theme';
 import { formatUGX, toISODate } from '@/utils/format';
 
+// Owner screen for booking a maintenance service.
+
+// Icon per service; services added later via server config fall back to the wrench.
 const SERVICE_ICONS: Record<string, LucideIcon> = {
   'Oil Change': Droplet,
   'Brake Repair': Disc3,
@@ -22,6 +25,7 @@ const SERVICE_ICONS: Record<string, LucideIcon> = {
 /** O7 Book maintenance — service, date strip, notes. Past dates disabled (server also rejects). */
 export default function Book() {
   const config = useConfig();
+  // A car can be preselected when coming from its detail page or the add-car flow.
   const params = useLocalSearchParams<{ vehicleId?: string }>();
   const [vehicleId, setVehicleId] = useState<number | null>(params.vehicleId ? Number(params.vehicleId) : null);
   const [service, setService] = useState<string | null>(null);
@@ -29,8 +33,10 @@ export default function Book() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Stable callback so VehiclePicker's auto-select effect doesn't re-run every render.
   const onVehicle = useCallback((id: number) => setVehicleId(id), []);
 
+  // Creates the booking, refreshes job lists and opens the new job.
   const submit = async () => {
     setError(null);
     if (!vehicleId) return setError('Choose a vehicle.');

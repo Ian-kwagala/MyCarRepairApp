@@ -11,7 +11,9 @@ import { useStatusBar } from '@/hooks/use-status-bar';
 import { Keys, kv } from '@/services/storage';
 import { Brand, Space } from '@/theme';
 
-/** A1 Welcome — explain value; choose sign-up or sign-in. */
+// First screen a new user sees: what the app does, with buttons to sign up or sign in.
+
+/** A1 Welcome — explain value; choose sign-up or sign-in. Wording changes for the mechanic app. */
 export default function Welcome() {
   useStatusBar('light');
   // Shown once: returning users go straight to sign-in (only when Welcome itself is on screen,
@@ -31,6 +33,7 @@ export default function Welcome() {
   );
 
   const mechanic = APP_ROLE === 'mechanic';
+  // Three selling points, tailored to who the app is for.
   const points = mechanic
     ? [
         { icon: Siren, text: 'SOS and booking requests from car owners near you' },

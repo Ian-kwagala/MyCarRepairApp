@@ -6,27 +6,35 @@ import { Font, Radius, Space, Touch, useColors } from '@/theme';
 
 import { Text } from './text';
 
-type Kind = 'primary' | 'secondary' | 'danger' | 'success' | 'ghost' | 'outline' | 'info' | 'onDark';
+// Buttons: the main text Button, a round IconButton, and a helper for vibration feedback.
+
+/** Button colour scheme. `onDark` is for buttons placed on the navy header background. */
+type Kind ='primary' | 'secondary' | 'danger' | 'success' | 'ghost' | 'outline' | 'info' | 'onDark';
 
 export interface ButtonProps {
   title: string;
   onPress?: () => void;
   kind?: Kind;
+  /** Optional icon shown before the title. */
   icon?: LucideIcon;
+  /** Shows a spinner and blocks presses. */
   loading?: boolean;
   disabled?: boolean;
   size?: 'lg' | 'md' | 'sm';
+  /** Vibrate lightly on press. */
   haptic?: boolean;
   style?: StyleProp<ViewStyle>;
   accessibilityHint?: string;
 }
 
+/** Short vibration: a light tap, or a success/warning pattern. Does nothing on web. */
 export function haptic(kind: 'success' | 'warning' | 'light' = 'light') {
   if (Platform.OS === 'web') return;
   if (kind === 'light') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   else void Haptics.notificationAsync(kind === 'success' ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning);
 }
 
+/** Full-width-friendly button with large touch targets (56 pt for 'lg', 48 for 'md', 40 for 'sm'). */
 export function Button({
   title,
   onPress,
@@ -92,6 +100,7 @@ export function Button({
   );
 }
 
+/** Round icon-only button with a spoken label for screen readers and an optional red count badge (shows 9+ above 9). */
 export function IconButton({
   icon: Icon,
   onPress,

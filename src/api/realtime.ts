@@ -10,6 +10,7 @@ import type { RealtimeEvent, RealtimePayload } from '@/models';
 import { listen } from './local/bus';
 import type { RealtimeClient, RealtimeHandler, Session } from './types';
 
+/** Every event name the app listens for on the socket. */
 export const EVENTS: RealtimeEvent[] = [
   'new_job_pushed',
   'job_unavailable',
@@ -26,6 +27,7 @@ export const EVENTS: RealtimeEvent[] = [
 
 type AnyHandler = (event: RealtimeEvent, payload: RealtimePayload) => void;
 
+/** Shared subscribe/dispatch logic; subclasses only decide where events come from. */
 abstract class BaseRealtime implements RealtimeClient {
   protected handlers = new Map<RealtimeEvent, Set<RealtimeHandler>>();
   protected anyHandlers = new Set<AnyHandler>();
@@ -48,18 +50,21 @@ abstract class BaseRealtime implements RealtimeClient {
     };
   }
 
+  /** Delivers an incoming event to its specific handlers, then to the catch-all handlers. */
   protected dispatch(event: RealtimeEvent, payload: RealtimePayload) {
     this.handlers.get(event)?.forEach((h) => h(payload ?? {}));
     this.anyHandlers.forEach((h) => h(event, payload ?? {}));
   }
 }
 
+/** Local mode: listens on the in-process bus and keeps only events addressed to the signed-in user. */
 export class LocalRealtime extends BaseRealtime {
   private off: (() => void) | null = null;
 
   connect(session: Session) {
     this.disconnect();
     const me = session.user.id;
+    // The bus carries every user's events; drop the ones meant for someone else.
     this.off = listen((userId, event, payload) => {
       if (userId === me) this.dispatch(event, payload);
     });
@@ -71,6 +76,7 @@ export class LocalRealtime extends BaseRealtime {
   }
 }
 
+/** Remote mode: a Socket.IO connection to the backend, authenticated with the user's access token. */
 export class SocketRealtime extends BaseRealtime {
   private socket: Socket | null = null;
   private reconnectHandlers = new Set<() => void>();
@@ -81,6 +87,7 @@ export class SocketRealtime extends BaseRealtime {
 
   connect(session: Session) {
     this.disconnect();
+    // The server rejects unauthenticated sockets, so don't try without a token.
     if (!session.accessToken) return;
     const socket = io(this.url, {
       transports: ['websocket'],
@@ -95,6 +102,7 @@ export class SocketRealtime extends BaseRealtime {
     this.socket = socket;
   }
 
+  /** Runs `fn` each time the socket reconnects after a drop; returns an unsubscribe function. */
   onReconnect(fn: () => void) {
     this.reconnectHandlers.add(fn);
     return () => {

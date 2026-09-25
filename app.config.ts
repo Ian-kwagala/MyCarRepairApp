@@ -1,3 +1,5 @@
+// Expo app configuration, evaluated at build time. Picks the app name, bundle ID, icons, permissions and
+// native plugins for the variant being built (owner app, mechanic app, or the combined dev build).
 import type { ExpoConfig } from 'expo/config';
 
 /**
@@ -10,6 +12,7 @@ type Variant = 'owner' | 'mechanic' | 'all';
 const VARIANT: Variant =
   process.env.APP_VARIANT === 'owner' || process.env.APP_VARIANT === 'mechanic' ? process.env.APP_VARIANT : 'all';
 
+// Per-variant store identity: display name, URL scheme, bundle/package ID, icon folder and brand colour.
 const VARIANTS = {
   owner: {
     name: 'MyCarRepair',
@@ -38,7 +41,8 @@ const VARIANTS = {
 } as const;
 
 const v = VARIANTS[VARIANT];
-const img = (file: string) => `./assets/images/${v.assets}/${file}`;
+/** Path to an image in the current variant's asset folder. */
+const img =(file: string) => `./assets/images/${v.assets}/${file}`;
 
 // Blueprint Appendix A.4 — app.config.ts essentials.
 const config: ExpoConfig = {
@@ -52,6 +56,7 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: v.id,
     icon: img('icon.png'),
+    // Permission prompts iOS shows the user; the location wording depends on who is using the app.
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
         VARIANT === 'mechanic' ? 'Share your position with owners and receive SOS jobs near you.' : 'Send help to exactly where you are.',
@@ -76,6 +81,7 @@ const config: ExpoConfig = {
       // Full-screen incoming-SOS alert is a mechanic feature (§11).
       ...(VARIANT === 'owner' ? [] : ['USE_FULL_SCREEN_INTENT']),
     ],
+    // Google Maps key is optional; without it the app shows map links instead of native maps.
     config: process.env.MAPS_KEY ? { googleMaps: { apiKey: process.env.MAPS_KEY } } : undefined,
     predictiveBackGestureEnabled: false,
   },
@@ -83,6 +89,7 @@ const config: ExpoConfig = {
     output: 'single',
     favicon: img('favicon.png'),
   },
+  // Config plugins that set up native code for each Expo module at prebuild time.
   plugins: [
     'expo-router',
     [
@@ -123,6 +130,7 @@ const config: ExpoConfig = {
       },
     ],
   ],
+  // typedRoutes: type-checked route strings for expo-router; reactCompiler: automatic memoisation.
   experiments: {
     typedRoutes: true,
     reactCompiler: true,

@@ -4,7 +4,9 @@ import { Bell, Briefcase, UserRound, Wallet } from 'lucide-react-native';
 import { useNotifications } from '@/hooks/use-notifications';
 import { Font, useColors } from '@/theme';
 
-/** Mechanic tabs: Jobs · Earnings · Alerts · Profile (§9). */
+// Bottom tab bar for mechanics.
+
+/** Mechanic tabs: Jobs · Earnings · Alerts · Profile (§9). The Alerts tab shows the unread-notification count. */
 export default function MechanicTabs() {
   const c = useColors();
   const { unread } = useNotifications();

@@ -40,13 +40,19 @@ import type {
 type Tokens = Pick<Session, 'accessToken' | 'refreshToken'>;
 type Body = Record<string, unknown> | FormData | undefined;
 
+/** Requests taking longer than this are aborted and reported as a network error. */
 const TIMEOUT_MS = 20_000;
 
+/** Adds a photo file to a multipart form under `field`. */
 function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
   // React Native FormData file part.
   form.append(field, { uri: p.uri, name: p.name, type: p.type } as unknown as Blob);
 }
 
+/**
+ * Builds a multipart form from plain fields plus photo files. Undefined fields are skipped, null becomes
+ * an empty string, and arrays are sent as repeated `key[]` entries.
+ */
 function toForm(fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>) {
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) {
@@ -58,13 +64,17 @@ function toForm(fields: Record<string, unknown>, files: Record<string, LocalPhot
   return form;
 }
 
+/** The ApiClient for the real backend. Endpoint methods map 1:1 to the §7 routes. */
 export class RemoteApiClient implements ApiClient {
   readonly mode = 'remote' as const;
   private tokens: Tokens | null = null;
+  // Told when tokens are refreshed (so they get saved) or become invalid (so the app signs out).
   private tokenListener: ((t: Tokens | null) => void) | null = null;
+  // The token refresh in flight, shared so several failing requests trigger only one refresh.
   private refreshing: Promise<boolean> | null = null;
 
   constructor(private baseUrl: string) {
+    // Strip trailing slashes so paths like "/me" join cleanly.
     this.baseUrl = baseUrl.replace(/\/+$/, '');
   }
 
@@ -76,6 +86,10 @@ export class RemoteApiClient implements ApiClient {
     this.tokenListener = cb;
   }
 
+  /**
+   * Swaps the refresh token for a new access token. Returns false (and signs the app out) if that fails.
+   * Concurrent callers share the same in-flight refresh.
+   */
   private async refresh(): Promise<boolean> {
     if (!this.tokens?.refreshToken) return false;
     this.refreshing ??= (async () => {
@@ -96,10 +110,15 @@ export class RemoteApiClient implements ApiClient {
     return this.refreshing;
   }
 
+  /**
+   * Sends one HTTP request and returns the parsed JSON body. Throws ApiError with the server's code and
+   * message on failure, or a network error if the server can't be reached or times out. No retry.
+   */
   private async raw(method: string, path: string, body?: Body, auth = true): Promise<any> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (auth && this.tokens?.accessToken) headers.Authorization = `Bearer ${this.tokens.accessToken}`;
     let payload: BodyInit | undefined;
+    // FormData sets its own multipart Content-Type (with boundary), so only JSON bodies set it here.
     if (body instanceof FormData) payload = body;
     else if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -116,6 +135,7 @@ export class RemoteApiClient implements ApiClient {
       clearTimeout(timer);
     }
     if (res.status === 204) return undefined;
+    // Parse leniently: an empty or non-JSON body (e.g. a proxy error page) becomes undefined.
     const text = await res.text();
     let json: any = undefined;
     try {
@@ -130,6 +150,10 @@ export class RemoteApiClient implements ApiClient {
     return json;
   }
 
+  /**
+   * An authenticated request. On 401 it refreshes the token once and retries; if that fails the app is
+   * signed out and the error is re-thrown.
+   */
   private async req<T>(method: string, path: string, body?: Body): Promise<T> {
     try {
       return await this.raw(method, path, body);
@@ -142,6 +166,7 @@ export class RemoteApiClient implements ApiClient {
     }
   }
 
+  /** Turns a login/register response into a Session and starts using its tokens. */
   private asSession(res: any): Session {
     const s: Session = { user: res.user, accessToken: res.accessToken ?? null, refreshToken: res.refreshToken ?? null };
     this.setAuth(s);
@@ -153,6 +178,7 @@ export class RemoteApiClient implements ApiClient {
     return this.asSession(await this.raw('POST', '/auth/register', { ...input }, false));
   }
   async login(input: LoginInput) {
+    // The server takes either `email` or `phone`; decide which from the typed identifier.
     const isEmail = input.identifier.includes('@');
     return this.asSession(
       await this.raw(
@@ -164,6 +190,7 @@ export class RemoteApiClient implements ApiClient {
     );
   }
   async logout(pushToken?: string | null) {
+    // Sends the push token so the server stops notifying this device. Signs out locally even if the call fails.
     try {
       await this.req('POST', '/auth/logout', { pushToken: pushToken ?? undefined });
     } finally {
@@ -189,6 +216,7 @@ export class RemoteApiClient implements ApiClient {
     await this.req('POST', '/me/push-token', { token, platform });
   }
   getConfig() {
+    // Public endpoint: works before sign-in.
     return this.raw('GET', '/config', undefined, false) as Promise<AppConfig>;
   }
 
@@ -204,6 +232,7 @@ export class RemoteApiClient implements ApiClient {
     return this.req<Vehicle>('POST', '/vehicles', toForm(fields as Record<string, unknown>, { photos }));
   }
   updateVehicle(id: number, patch: VehicleUpdate) {
+    // keepPhotos lists existing photo URLs to keep; newPhotos are uploaded as files.
     const { newPhotos, keepPhotos, ...fields } = patch;
     return this.req<Vehicle>(
       'PATCH',

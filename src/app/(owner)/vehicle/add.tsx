@@ -6,7 +6,12 @@ import { VehicleForm } from '@/features/vehicle-form';
 import { queryClient } from '@/services/query-client';
 import { toast } from '@/store/toast';
 
-/** O6 Add vehicle wizard. */
+// Owner screen for adding a car to the garage.
+
+/**
+ * O6 Add vehicle wizard. If opened with `then` (e.g. from SOS with no car saved), continues to that
+ * screen with the new car selected; otherwise goes back.
+ */
 export default function AddVehicle() {
   const { then } = useLocalSearchParams<{ then?: string }>();
   return (

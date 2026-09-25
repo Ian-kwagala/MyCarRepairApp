@@ -12,7 +12,12 @@ import { toast } from '@/store/toast';
 import { Space, useColors } from '@/theme';
 import { firstName } from '@/utils/format';
 
-/** M7 Verification status — holding screen for pending mechanics (status = pending). */
+// Waiting screen for mechanics whose account hasn't been approved yet (or has been suspended).
+
+/**
+ * M7 Verification status — holding screen for pending mechanics (status = pending). Once approved, the
+ * root layout moves the mechanic into the main app automatically.
+ */
 export default function Verify() {
   const c = useColors();
   const user = useUser();
@@ -23,13 +28,15 @@ export default function Verify() {
   if (!user) return null;
 
   const suspended = user.status === 'suspended';
-  const steps: { label: string; done: boolean; phase2?: boolean }[] = [
+  // Verification checklist. ID upload isn't built yet (Phase 2).
+  const steps:{ label: string; done: boolean; phase2?: boolean }[] = [
     { label: 'Account created', done: true },
     { label: 'Garage & expertise added', done: !!(user.garageName && user.garageLocation) },
     { label: 'National ID / permit photo', done: false, phase2: true },
     { label: 'Admin approval', done: false },
   ];
 
+  // Re-fetches the profile to see whether an admin has approved the account.
   const check = async () => {
     setChecking(true);
     try {

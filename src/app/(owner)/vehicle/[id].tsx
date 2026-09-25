@@ -15,6 +15,8 @@ import { confirm } from '@/utils/confirm';
 import { formatDate } from '@/utils/format';
 import { serviceDueInDays, serviceDueText } from '@/utils/jobs';
 
+// Owner screen showing one car in detail.
+
 /** Vehicle detail — specs, photos, service due, recent jobs, edit/delete. */
 export default function VehicleDetail() {
   const c = useColors();
@@ -24,6 +26,7 @@ export default function VehicleDetail() {
   const [deleting, setDeleting] = useState(false);
   const v = q.data?.vehicle;
 
+  // Deletes the car after confirmation. The server refuses if it has a job in progress.
   const remove = async () => {
     if (!v) return;
     if (!(await confirm('Delete this car?', `${v.make} ${v.model} · ${v.plateNumber} will be removed from your garage.`, 'Delete', true))) return;
@@ -49,6 +52,7 @@ export default function VehicleDetail() {
   }
 
   const due = serviceDueInDays(v);
+  // [label, value] rows for the specs card; missing values show "—".
   const specs: [string, string][] = [
     ['Plate', v.plateNumber],
     ['Year', String(v.year)],

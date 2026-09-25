@@ -12,6 +12,9 @@ import { queryClient } from '@/services/query-client';
 import { toast } from '@/store/toast';
 import { Space } from '@/theme';
 
+// Owner screen for requesting a diagnosis from symptoms.
+
+// Icon per symptom; unknown symptoms fall back to the warning triangle.
 const SYMPTOM_ICONS: Record<string, LucideIcon> = {
   'Engine Light': TriangleAlert,
   'Strange Noise': Volume2,
@@ -29,10 +32,13 @@ export default function Diagnostics() {
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Stable callback so VehiclePicker's auto-select effect doesn't re-run every render.
   const onVehicle = useCallback((id: number) => setVehicleId(id), []);
 
+  // Adds or removes a symptom from the selection.
   const toggle = (s: string) => setSymptoms((x) => (x.includes(s) ? x.filter((y) => y !== s) : [...x, s]));
 
+  // Sends the request (with at most one photo), refreshes job lists and opens the new job.
   const submit = async () => {
     setError(null);
     if (!vehicleId) return setError('Choose a vehicle.');

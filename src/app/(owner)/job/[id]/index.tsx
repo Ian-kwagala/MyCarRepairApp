@@ -34,7 +34,12 @@ import { confirm } from '@/utils/confirm';
 import { formatDate, formatUGX } from '@/utils/format';
 import { computeTotals, isActive, pendingQuotes, progress, statusLabel } from '@/utils/jobs';
 
-/** O9 Live repair tracker — 5-stage timeline, live checklist, pending quotes → O10. */
+// Owner's live view of one repair job.
+
+/**
+ * O9 Live repair tracker — 5-stage timeline, live checklist, pending quotes → O10. Also shows the
+ * mechanic (with a map while they're on the way) and the running total. Refreshes automatically.
+ */
 export default function Tracker() {
   const c = useColors();
   const id = Number(useLocalSearchParams<{ id: string }>().id);
@@ -56,6 +61,7 @@ export default function Tracker() {
   const totals = job.totals ?? computeTotals(job.quotes);
   const mech = job.mechanic;
   const enRoute = job.status === 'accepted';
+  // Map pins: the car (SOS jobs only; bookings happen at the garage) and the mechanic.
   const points = [
     job.owner?.locationLat != null && job.owner.locationLng != null && job.sosActive
       ? ({ lat: job.owner.locationLat, lng: job.owner.locationLng, label: 'Your car', kind: 'me' } as MapPoint)
@@ -63,6 +69,7 @@ export default function Tracker() {
     mech?.locationLat != null && mech.locationLng != null ? ({ lat: mech.locationLat, lng: mech.locationLng, label: mech.fullName, kind: 'mechanic' } as MapPoint) : null,
   ].filter(Boolean) as MapPoint[];
 
+  // Cancels a request no mechanic has accepted yet (works for bookings and SOS alike).
   const cancel = async () => {
     if (!(await confirm('Cancel this request?', 'Mechanics will no longer see it.', 'Cancel request', true))) return;
     setCancelling(true);

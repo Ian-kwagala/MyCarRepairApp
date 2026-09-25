@@ -3,6 +3,9 @@ import { ProfileScreen } from '@/features/profile-screen';
 import { useMechanicStats } from '@/hooks/queries';
 import { Space } from '@/theme';
 
+// Mechanic Profile tab: the shared profile screen plus job count and rating tiles.
+
+/** Mechanic's Profile tab. */
 export default function MechanicProfile() {
   const stats = useMechanicStats();
   return (

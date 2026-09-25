@@ -6,7 +6,11 @@ import { Platform } from 'react-native';
 
 import { api } from '@/api';
 
+// Opening and sharing a job's PDF receipt.
+
+/** Returns a local file path for the receipt, downloading it into the cache first if it's a web URL. */
 async function localFile(url: string, jobId: number): Promise<string> {
+  // Local mode already produced a file on the device.
   if (url.startsWith('file:')) return url;
   const dir = new Directory(Paths.cache, 'receipts');
   if (!dir.exists) dir.create({ intermediates: true });
@@ -23,6 +27,7 @@ export async function openReceipt(jobId: number) {
     globalThis.open?.(url, '_blank');
     return;
   }
+  // Server receipts open in an in-app browser; on-device PDFs open in the system print preview.
   if (url.startsWith('http')) {
     await WebBrowser.openBrowserAsync(url);
     return;

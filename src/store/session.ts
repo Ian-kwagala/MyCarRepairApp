@@ -7,6 +7,10 @@ import type { User } from '@/models';
 import { resetQueryCache } from '@/services/query-client';
 import { Keys, kv, secure } from '@/services/storage';
 
+// Who is signed in. Restores the saved session at startup, handles sign-in and sign-out, and keeps the
+// API client, realtime connection and saved copy in sync with it.
+
+/** 'loading' until the saved session has been checked at startup. */
 type Status = 'loading' | 'signedOut' | 'signedIn';
 
 interface SessionState {
@@ -21,16 +25,19 @@ interface SessionState {
   unlock: () => void;
 }
 
+/** Saves the session to secure storage, or deletes it when null. */
 async function persist(session: Session | null) {
   if (session) await secure.set(Keys.session, JSON.stringify(session));
   else await secure.remove(Keys.session);
 }
 
+/** Hook for the current session and the sign-in/sign-out actions. */
 export const useSession = create<SessionState>((set, get) => ({
   status: 'loading',
   session: null,
   locked: false,
 
+  // Startup: restore the saved session, check it's still valid, and lock the app if biometrics are on.
   hydrate: async () => {
     let session: Session | null = null;
     try {
@@ -39,12 +46,14 @@ export const useSession = create<SessionState>((set, get) => ({
     } catch {
       session = null;
     }
+    // A session for the wrong role (e.g. an owner account in the mechanic app) is discarded.
     if (!session || (APP_ROLE && session.user.role !== APP_ROLE)) {
       if (session) await persist(null);
       set({ status: 'signedOut', session: null });
       return;
     }
     api.setAuth(session);
+    // Refresh the user's profile (status or details may have changed since last time).
     try {
       const user = await api.me();
       session = { ...session, user };
@@ -63,6 +72,7 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ status: 'signedIn', session, locked: !!prefs.biometric });
   },
 
+  // After a successful login/register: clear the previous user's cached data, then save and connect.
   signIn: async (session) => {
     await resetQueryCache();
     api.setAuth(session);
@@ -71,18 +81,22 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ status: 'signedIn', session, locked: false });
   },
 
+  // Tell the server (best effort, so it works offline), then clear everything stored for this user.
   signOut: async () => {
     realtime.disconnect();
     try {
       const { pushToken } = await kv.get<{ pushToken?: string }>(Keys.prefs, {});
       await api.logout(pushToken ?? null);
-    } catch {}
+    } catch {
+      // Offline or token already invalid: still sign out locally.
+    }
     api.setAuth(null);
     await persist(null);
     await resetQueryCache();
     set({ status: 'signedOut', session: null, locked: false });
   },
 
+  // Replaces the signed-in user's details (e.g. after editing the profile).
   setUser: (user) => {
     const s = get().session;
     if (!s) return;
@@ -91,6 +105,7 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ session });
   },
 
+  // Called once biometric unlock succeeds.
   unlock: () => set({ locked: false }),
 }));
 
@@ -107,10 +122,12 @@ api.onTokensChanged((tokens) => {
   useSession.setState({ session: next });
 });
 
+/** The signed-in user, or null. */
 export function useUser(): User | null {
   return useSession((s) => s.session?.user ?? null);
 }
 
+/** The signed-in user, for screens that are only reachable when signed in. Throws if there is none. */
 export function useRequiredUser(): User {
   const u = useUser();
   if (!u) throw new Error('No signed-in user');

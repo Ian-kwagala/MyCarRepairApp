@@ -18,8 +18,13 @@ import { usePrefs } from '@/store/prefs';
 import { useSession } from '@/store/session';
 import { Palette, useIsDark } from '@/theme';
 
+// Root layout: the app's entry point. Loads fonts, preferences and the saved session, sets up the data
+// cache and theme, and decides which part of the app the user may see.
+
+// Keep the splash screen up until fonts and the session are ready.
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
+/** Wraps the whole app in its providers; shows nothing (the splash screen) until startup finishes. */
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
@@ -32,12 +37,14 @@ export default function RootLayout() {
   const status = useSession((s) => s.status);
   const dark = useIsDark();
 
+  // One-time startup work.
   useEffect(() => {
     void usePrefs.getState().load();
     void useSession.getState().hydrate();
     void configureNotifications();
   }, []);
 
+  // A font error still counts as ready: the app falls back to system fonts rather than hanging.
   const ready = (fontsLoaded || !!fontError) && status !== 'loading';
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync();
@@ -45,6 +52,7 @@ export default function RootLayout() {
 
   if (!ready) return null;
 
+  // Navigation theme using the app's colours, so screen transitions don't flash the default white.
   const p = dark ? Palette.dark : Palette.light;
   const base = dark ? DarkTheme : DefaultTheme;
   const navTheme = { ...base, colors: { ...base.colors, background: p.background, card: p.surface, primary: p.primary, text: p.text, border: p.border } };
@@ -73,6 +81,7 @@ function Gate() {
   if (config.maintenance) return <MaintenanceScreen onRetry={() => queryClient.invalidateQueries({ queryKey: ['config'] })} />;
   if (user && locked) return <LockScreen />;
 
+  // Each protected group is only reachable when its guard is true; expo-router redirects away otherwise.
   const signedIn = !!user;
   const isOwner = user?.role === 'owner';
   const isMechanic = user?.role === 'mechanic' && user.status === 'active';

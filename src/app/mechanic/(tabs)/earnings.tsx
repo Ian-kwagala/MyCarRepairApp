@@ -9,8 +9,11 @@ import { useEarnings } from '@/hooks/queries';
 import { Space } from '@/theme';
 import { compactUGX, formatDate, formatUGX } from '@/utils/format';
 
+// Mechanic Earnings tab.
+
 /** M6 Earnings — today, week/month bars, recent payouts. MoMo withdrawal is Phase 2 (hidden). */
 export default function Earnings() {
+  // The 'day' range exists in the API but this screen only offers week and month.
   const [range, setRange] = useState<Exclude<EarningsRange, 'day'>>('week');
   const q = useEarnings(range);
   const e = q.data;

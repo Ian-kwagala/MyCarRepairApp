@@ -35,6 +35,8 @@ import { formatDate } from '@/utils/format';
 import { formatKm } from '@/utils/geo';
 import { vehicleLabel } from '@/utils/jobs';
 
+// Mechanic Jobs tab: the main job board.
+
 /** M1 Job board — duty toggle, stats, SOS/Bookings/Active/History, distance-sorted, inline Accept/Skip. */
 export default function JobBoard() {
   const user = useUser();
@@ -46,9 +48,12 @@ export default function JobBoard() {
   // Offline mode hides the SOS tab.
   const tab: MechanicTab = !online && chosenTab === 'sos' ? 'bookings' : chosenTab;
   const [toggling, setToggling] = useState(false);
+  // ID of the job whose Accept/Decline is in progress.
   const [busy, setBusy] = useState<number | null>(null);
+  // SOS jobs this mechanic skipped; hidden only on this device (saved per user).
   const [skipped, setSkipped] = useState<number[]>([]);
 
+  // All four lists load so tab counts stay current; SOS and bookings auto-refresh.
   const stats = useMechanicStats();
   const sos = useMechanicJobs('sos', coords, { live: online });
   const bookings = useMechanicJobs('bookings', coords, { live: true });
@@ -61,6 +66,8 @@ export default function JobBoard() {
     if (user) void kv.get<number[]>(Keys.skippedJobs(user.id), []).then(setSkipped);
   }, [user]);
 
+  // Goes online/offline. Going online first sends a fresh GPS position (SOS dispatch needs it) and
+  // fails with a Settings shortcut if location is denied.
   const toggleOnline = async (next: boolean) => {
     setToggling(true);
     try {
@@ -81,11 +88,13 @@ export default function JobBoard() {
     }
   };
 
+  // Claims the job and opens it. If another mechanic got there first, says so and refreshes the board.
   const accept = async (job: Job) => {
     setBusy(job.id);
     try {
       const accepted = await api.acceptJob(job.id);
       haptic('success');
+      // Seed the job cache so the job screen opens instantly.
       queryClient.setQueryData(qk.job(job.id), accepted);
       void queryClient.invalidateQueries({ queryKey: ['mechanic'] });
       router.push(`/mechanic/job/${job.id}`);
@@ -97,6 +106,7 @@ export default function JobBoard() {
     }
   };
 
+  // Declining a booking cancels it for the owner (after confirmation). Skipping an SOS just hides it here.
   const skip = async (job: Job) => {
     if (!user) return;
     if (!job.sosActive) {
@@ -209,6 +219,7 @@ export default function JobBoard() {
   );
 }
 
+/** An open SOS or booking with its distance, owner, car and date, and Accept / Skip (or Decline) buttons. */
 function OpenJobCard({ job, onAccept, onSkip, busy }: { job: Job; onAccept: () => void; onSkip: () => void; busy: boolean }) {
   const c = useColors();
   return (

@@ -5,6 +5,8 @@ import { Button, EmptyState, ErrorState, Screen, SkeletonList, Text, VehicleCard
 import { useVehicles } from '@/hooks/queries';
 import { MAX_PHOTOS } from '@/constants/config';
 
+// Owner Garage tab: the list of saved cars.
+
 /** O5 Virtual garage — cards with photos & service-due reminders. */
 export default function Garage() {
   const vehicles = useVehicles();

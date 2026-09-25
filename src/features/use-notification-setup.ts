@@ -7,7 +7,12 @@ import { usePrefs } from '@/store/prefs';
 import { useUser } from '@/store/session';
 import { confirm } from '@/utils/confirm';
 
-/** Notifications are asked after sign-in with a pre-prompt explaining SOS alerts (§11). */
+// Asks for notification permission after sign-in and registers the device for push notifications.
+
+/**
+ * Notifications are asked after sign-in with a pre-prompt explaining SOS alerts (§11).
+ * The pre-prompt shows once per user; on later launches it just re-registers the push token.
+ */
 export function useNotificationSetup() {
   const user = useUser();
   const userId = user?.id;
@@ -19,6 +24,7 @@ export function useNotificationSetup() {
     void (async () => {
       const asked = await kv.get(key, false);
       if (!asked && !cancelled) {
+        // Remember we asked before showing the dialog, so it never appears twice.
         await kv.set(key, true);
         const ok = await confirm(
           'Turn on alerts?',
@@ -29,6 +35,7 @@ export function useNotificationSetup() {
         );
         if (!ok) return;
       }
+      // Only shows the system prompt if permission isn't already granted.
       if (await requestNotificationPermission()) {
         const token = await registerForPush();
         if (token) await usePrefs.getState().update({ pushToken: token });

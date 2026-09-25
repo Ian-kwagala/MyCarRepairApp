@@ -15,6 +15,9 @@ import { useUser } from '@/store/session';
 import { toast } from '@/store/toast';
 import { Font, Radius, Space, useColors } from '@/theme';
 
+// Owner screen for sending an emergency SOS.
+
+// Icon per breakdown type; unknown issues fall back to the warning triangle.
 const ISSUE_ICONS: Record<string, LucideIcon> = {
   'Flat Tire': Disc3,
   'Dead Battery': Battery,
@@ -24,9 +27,13 @@ const ISSUE_ICONS: Record<string, LucideIcon> = {
   'Car Crash': TriangleAlert,
 };
 
-type GpsState = { kind: 'locating' } | { kind: 'locked'; fix: Fix } | { kind: 'denied' } | { kind: 'error'; message: string };
+/** Progress of getting the owner's GPS position. */
+type GpsState ={ kind: 'locating' } | { kind: 'locked'; fix: Fix } | { kind: 'denied' } | { kind: 'error'; message: string };
 
-/** O2 SOS — choose vehicle + 1 of 6 issues; tap sends immediately (≤ 3 taps from launch). */
+/**
+ * O2 SOS — choose vehicle + 1 of 6 issues; tap sends immediately (≤ 3 taps from launch).
+ * GPS starts locating as soon as the screen opens. Without signal, the SOS is queued and sent later.
+ */
 export default function SosIssue() {
   const c = useColors();
   const user = useUser();
@@ -40,12 +47,14 @@ export default function SosIssue() {
   // The vehicle is preselected (first car) unless the owner picks another.
   const vehicleId = picked ?? vehicles.data?.[0]?.id ?? null;
 
+  // Bumping `attempt` re-runs the GPS effect below ("Retry GPS").
   const [attempt, setAttempt] = useState(0);
   const locate = () => {
     setGps({ kind: 'locating' });
     setAttempt((a) => a + 1);
   };
 
+  // Get a GPS fix; `active` ignores a result that arrives after leaving the screen or retrying.
   useEffect(() => {
     let active = true;
     getCurrentFix().then(
@@ -59,6 +68,8 @@ export default function SosIssue() {
 
   const vehicle = vehicles.data?.find((v) => v.id === vehicleId);
 
+  // Sends the SOS for the tapped issue. Offline (or if the request can't reach the server), it's saved
+  // to the queue and the offline screen is shown instead.
   const send = async (issue: string) => {
     if (!vehicle || !user) return;
     if (gps.kind !== 'locked') {

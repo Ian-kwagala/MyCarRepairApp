@@ -7,9 +7,16 @@ import { Button, Skeleton, Text } from '@/components';
 import { useVehicles } from '@/hooks/queries';
 import { Radius, Space, useColors } from '@/theme';
 
+// Horizontal row of the owner's cars to choose from, used on the booking, diagnostics and SOS screens.
+
+/**
+ * Lets the owner pick one of their cars. Selects the first car automatically. With no cars, shows an
+ * "Add a car first" button that returns to the `then` screen once the car is added.
+ */
 export function VehiclePicker({ value, onChange, then }: { value: number | null; onChange: (id: number) => void; then: '/book' | '/diagnostics' | '/sos' }) {
   const c = useColors();
   const vehicles = useVehicles();
+  // Default to the first car so the form is ready to submit.
   useEffect(() => {
     if (value == null && vehicles.data?.length) onChange(vehicles.data[0].id);
   }, [vehicles.data, value, onChange]);

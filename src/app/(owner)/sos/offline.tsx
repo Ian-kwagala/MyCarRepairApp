@@ -10,18 +10,25 @@ import { sosQueue, type QueuedSos } from '@/services/sos-queue';
 import { Space, useColors } from '@/theme';
 import { formatTime } from '@/utils/format';
 
-/** X1 Offline SOS — never lose an emergency request. Auto-sends when signal returns. */
+// Shown when an SOS couldn't be sent because the phone is offline.
+
+/**
+ * X1 Offline SOS — never lose an emergency request. Auto-sends when signal returns. Also offers to send
+ * it by SMS or call the support line right away.
+ */
 export default function OfflineSos() {
   const c = useColors();
   const config = useConfig();
   const [q, setQ] = useState<QueuedSos | null>(null);
 
+  // Re-check the queue every 3 s so the screen updates once the SOS has been sent in the background.
   useEffect(() => {
     void sosQueue.get().then(setQ);
     const t = setInterval(() => void sosQueue.get().then(setQ), 3000);
     return () => clearInterval(t);
   }, []);
 
+  // Short text with the issue, plate and GPS position, so SMS works with no data connection.
   const smsBody = q ? `SOS ${q.issue} ${q.plate} GPS ${q.lat.toFixed(5)},${q.lng.toFixed(5)}` : '';
 
   return (

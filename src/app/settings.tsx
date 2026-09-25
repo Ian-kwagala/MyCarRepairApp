@@ -14,6 +14,8 @@ import { toast } from '@/store/toast';
 import { Brand, Space } from '@/theme';
 import { confirm } from '@/utils/confirm';
 
+// App settings screen (both roles).
+
 /** Settings — biometrics, notification preferences, language, privacy & account deletion (§13.2). */
 export default function Settings() {
   const user = useUser();
@@ -22,6 +24,7 @@ export default function Settings() {
   const config = useConfig();
   const [bioAvailable, setBioAvailable] = useState(false);
 
+  // Biometric unlock is only offered if the phone has a sensor with a fingerprint/face enrolled.
   useEffect(() => {
     if (Platform.OS === 'web') return;
     void (async () => {
@@ -29,6 +32,7 @@ export default function Settings() {
     })();
   }, []);
 
+  // Turning biometric unlock on requires a successful scan first, so it can't be enabled by mistake.
   const toggleBio = async (v: boolean) => {
     if (v) {
       const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Confirm to enable quick unlock' });
@@ -37,6 +41,7 @@ export default function Settings() {
     await prefs.update({ biometric: v });
   };
 
+  // Builds an orange on/off switch for a settings row.
   const sw = (value: boolean, onChange: (v: boolean) => void, disabled?: boolean) => (
     <Switch value={value} onValueChange={onChange} disabled={disabled} trackColor={{ true: Brand.orange }} thumbColor="#fff" />
   );

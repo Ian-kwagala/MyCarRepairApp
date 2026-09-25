@@ -7,14 +7,18 @@ import { useJobs } from '@/hooks/queries';
 import type { Job } from '@/models';
 import { groupByDate } from '@/utils/format';
 
+// Owner Activity tab: the owner's jobs.
+
 /** O12 Activity — active vs history, grouped by date (Today … Older). Cached for offline viewing. */
 export default function ActivityTab() {
   const [tab, setTab] = useState<'active' | 'history'>('active');
+  // Both lists load so the tab counts are right; only the active list auto-refreshes, and only while shown.
   const active = useJobs('active', { live: tab === 'active' });
   const history = useJobs('history');
   const q = tab === 'active' ? active : history;
   const groups = groupByDate(q.data ?? [], (j) => j.createdAt);
 
+  // Open the most useful screen for the job's state: live SOS search, receipt, or job details.
   const open = (j: Job) => {
     if (j.sosActive && j.status === 'pending') router.push(`/sos/${j.id}`);
     else if (j.status === 'completed') router.push(`/job/${j.id}/receipt`);

@@ -4,7 +4,9 @@ import { Activity, Car, House, UserRound } from 'lucide-react-native';
 import { useNotifications } from '@/hooks/use-notifications';
 import { Font, useColors } from '@/theme';
 
-/** Owner tabs: Home · Garage · Activity · Profile (§9). */
+// Bottom tab bar for car owners.
+
+/** Owner tabs: Home · Garage · Activity · Profile (§9). The Profile tab shows the unread-notification count. */
 export default function OwnerTabs() {
   const c = useColors();
   const { unread } = useNotifications();

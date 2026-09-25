@@ -3,6 +3,7 @@ import type { ChecklistItem, FuelType, Job, PartsQuote, Review, Transmission, Us
 
 import { splitPaths, type ChecklistRow, type JobRow, type QuoteRow, type ReviewRow, type UserRow, type VehicleRow } from './db';
 
+/** Converts a users row to the API User. Garage fields are only included for mechanics. */
 export function toUser(r: UserRow): User {
   const u: User = {
     id: r.id,
@@ -24,6 +25,7 @@ export function toUser(r: UserRow): User {
   return u;
 }
 
+/** Converts a vehicles row to the API Vehicle. */
 export function toVehicle(r: VehicleRow): Vehicle {
   return {
     id: r.id,
@@ -43,6 +45,7 @@ export function toVehicle(r: VehicleRow): Vehicle {
   };
 }
 
+/** Converts a jobs row to a bare API Job; callers attach vehicle, mechanic, checklist etc. as needed. */
 export function toJob(r: JobRow): Job {
   return {
     id: r.id,
@@ -58,6 +61,7 @@ export function toJob(r: JobRow): Job {
   };
 }
 
+/** Converts a job_checklists row to the API ChecklistItem. */
 export function toChecklistItem(r: ChecklistRow): ChecklistItem {
   return {
     id: r.id,
@@ -69,6 +73,7 @@ export function toChecklistItem(r: ChecklistRow): ChecklistItem {
   };
 }
 
+/** Converts a parts_quotes row to the API PartsQuote. */
 export function toQuote(r: QuoteRow): PartsQuote {
   return {
     id: r.id,
@@ -81,6 +86,7 @@ export function toQuote(r: QuoteRow): PartsQuote {
   };
 }
 
+/** Converts a reviews row to the API Review, clamping the rating into 1–5. */
 export function toReview(r: ReviewRow): Review {
   return {
     id: r.id,

@@ -10,8 +10,13 @@ import { ApiError } from '@/api/errors';
 import { LocalApiClient } from '@/api/local/client';
 import type { Session } from '@/api/types';
 
+// Where the test owner's car breaks down.
 const KAMPALA = { lat: 0.3136, lng: 32.5811 };
 
+/**
+ * Fresh store with one owner (with a car) and two approved, online mechanics: one ~2 km away and one
+ * ~41 km away. Each party gets its own client, as if on separate phones.
+ */
 async function setup() {
   await AsyncStorage.clear();
   jest.resetModules();
@@ -38,6 +43,7 @@ async function setup() {
   return { owner, mech, mech2, o, v };
 }
 
+/** Awaits a call and returns "OK" or "<status> <code>" of the ApiError, for compact assertions. */
 const code = async (p: Promise<unknown>) => {
   try {
     await p;

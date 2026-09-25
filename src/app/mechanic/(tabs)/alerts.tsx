@@ -6,6 +6,8 @@ import { useNotifications } from '@/hooks/use-notifications';
 import { markAllRead } from '@/services/notification-store';
 import { useUser } from '@/store/session';
 
+// Mechanic Alerts tab: notification history.
+
 /** Mechanic Alerts tab — SOS alerts, bookings, quote decisions. */
 export default function Alerts() {
   const user = useUser();

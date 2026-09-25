@@ -1,3 +1,6 @@
+// System (OS-level) notifications: Android channels, the permission prompt, registering for push, and
+// showing a local notification when an event arrives while the app is in the background.
+// None of this runs on web.
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -5,12 +8,14 @@ import { AppState, Platform } from 'react-native';
 
 import { api } from '@/api';
 
+// Setup only needs to run once per app launch.
 let configured = false;
 
 /** Android channels (§8): sos (max, full-screen), jobs (high), general (default). */
 export async function configureNotifications() {
   if (configured || Platform.OS === 'web') return;
   configured = true;
+  // Show notifications even while the app is open.
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -51,6 +56,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
 
 /** Registers the Expo push token with the backend (POST /me/push-token). Needs a dev/production build. */
 export async function registerForPush(): Promise<string | null> {
+  // Push needs a real device and a backend to send from; skip on web, simulators and local mode.
   if (Platform.OS === 'web' || !Device.isDevice || api.mode !== 'remote') return null;
   try {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
@@ -65,13 +71,17 @@ export async function registerForPush(): Promise<string | null> {
 
 /** Shows a system notification when the app is in the background (socket still alive). */
 export async function presentIfBackground(title: string, body: string, data: Record<string, unknown>, channel: 'sos' | 'jobs' = 'jobs') {
+  // In the foreground the screens update live, so no system notification is needed.
   if (Platform.OS === 'web' || AppState.currentState === 'active') return;
   try {
     const perm = await Notifications.getPermissionsAsync();
     if (!perm.granted) return;
     await Notifications.scheduleNotificationAsync({
       content: { title, body, data, sound: 'default' },
+      // null trigger = show now; on Android the channel picks the sound and priority.
       trigger: Platform.OS === 'android' ? { channelId: channel } : null,
     });
-  } catch {}
+  } catch {
+    // A missed background alert shouldn't crash anything; the in-app list still has the event.
+  }
 }

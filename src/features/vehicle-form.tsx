@@ -8,9 +8,13 @@ import { FUEL_TYPES, MAX_PHOTOS, TRANSMISSIONS } from '@/constants/config';
 import type { FuelType, LocalPhoto, Transmission, Vehicle } from '@/models';
 import { Space } from '@/theme';
 
+// The 3-step add/edit car form: basics, specs, photos. Each step is validated before moving on.
+
+// Typical Ugandan number plate, e.g. "UBK 482X". Only used for a hint; other formats are still accepted.
 const PLATE_RE = /^U[A-Z]{2}\s?\d{3}[A-Z]$/i;
 const thisYear = new Date().getFullYear();
 
+// Validation rules for step 1 (basics).
 const basics = z.object({
   make: z.string().trim().min(1, 'Enter the make, e.g. Toyota.').max(50),
   model: z.string().trim().min(1, 'Enter the model, e.g. Premio.').max(50),
@@ -19,6 +23,7 @@ const basics = z.object({
   color: z.string().trim().max(30).optional(),
 });
 
+// Validation rules for step 2 (specs). The service date must be a real YYYY-MM-DD date, not in the future.
 const specs = z.object({
   tyreSize: z.string().trim().max(20).optional(),
   mileage: z
@@ -33,6 +38,7 @@ const specs = z.object({
     .optional(),
 });
 
+/** What the form hands to `onSubmit`: the car details, new photos to upload, and existing photos to keep. */
 export interface VehicleFormResult {
   input: VehicleInput;
   newPhotos: LocalPhoto[];
@@ -41,7 +47,10 @@ export interface VehicleFormResult {
 
 const STEP_TITLES = ['Basics', 'Details', 'Photos'];
 
-/** O6 — same 11 fields as the web, split into 3 short steps (basics, specs, photos). */
+/**
+ * O6 — same 11 fields as the web, split into 3 short steps (basics, specs, photos). Pass `initial` to
+ * edit an existing car. `onSubmit` runs on the last step; the button shows a spinner until it finishes.
+ */
 export function VehicleForm({
   initial,
   title,
@@ -54,6 +63,7 @@ export function VehicleForm({
   onSubmit: (r: VehicleFormResult) => Promise<void>;
 }) {
   const [step, setStep] = useState(0);
+  // Form fields, all kept as text while editing and converted on submit.
   const [f, setF] = useState({
     make: initial?.make ?? '',
     model: initial?.model ?? '',
@@ -66,12 +76,15 @@ export function VehicleForm({
     mileage: initial?.mileage != null ? String(initial.mileage) : '',
     lastServiceDate: initial?.lastServiceDate?.slice(0, 10) ?? '',
   });
+  // Existing photo URLs still kept, and newly picked photos.
   const [keep, setKeep] = useState<string[]>(initial?.photos ?? []);
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // Returns a change handler for one text field.
   const set = (k: keyof typeof f) => (v: string) => setF((x) => ({ ...x, [k]: v }));
 
+  // Checks the current step; shows the first error for each field and returns whether it passed.
   const validate = (schema: z.ZodTypeAny) => {
     const r = schema.safeParse(f);
     if (r.success) {
@@ -84,6 +97,7 @@ export function VehicleForm({
     return false;
   };
 
+  // Main button: validate and advance, or on the last step convert the fields and submit.
   const next = async () => {
     if (step === 0 && !validate(basics)) return;
     if (step === 1 && !validate(specs)) return;
