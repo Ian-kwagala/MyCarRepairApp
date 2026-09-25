@@ -10,6 +10,7 @@ import { ICONS, type IconName } from './icons';
 export const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
+/** Inline SVG icon (decorative: hidden from screen readers). */
 export const icon = (name: IconName, size = 18) =>
   `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -17,13 +18,17 @@ export const icon = (name: IconName, size = 18) =>
 const EAT_MS = 3 * 3600_000;
 const eat = (d: Date) => new Date(d.getTime() + EAT_MS);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "25 Sep 2026" in Kampala time, or "—" when missing. */
 export const fmtDate = (d: Date | null | undefined) => {
   if (!d) return '—';
   const e = eat(d);
   return `${e.getUTCDate()} ${MONTHS[e.getUTCMonth()]} ${e.getUTCFullYear()}`;
 };
+/** "15:57" in Kampala time. */
 export const fmtTime = (d: Date) => eat(d).toISOString().slice(11, 16);
+/** "25 Sep 2026, 15:57" in Kampala time, or "—" when missing. */
 export const fmtDateTime = (d: Date | null | undefined) => (d ? `${fmtDate(d)}, ${fmtTime(d)}` : '—');
+/** Relative time for recent dates ("just now", "5 min ago", "2 d ago"), then the date. */
 export const ago = (d: Date) => {
   const s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
   if (s < 60) return 'just now';
@@ -33,7 +38,9 @@ export const ago = (d: Date) => {
   return fmtDate(d);
 };
 
+/** Thousands-separated number: 1,284. */
 export const num = (n: number | string) => Number(n).toLocaleString('en-US');
+/** Whole shillings: "UGX 260,000". */
 export const ugx = (n: number | string) => `UGX ${num(Math.round(Number(n)))}`;
 /** Compact money for stat tiles: UGX 950K, UGX 12.4M. */
 export const ugxCompact = (n: number | string) => {
@@ -44,14 +51,18 @@ export const ugxCompact = (n: number | string) => {
 };
 
 type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'brand';
+/** Status pill; the label always carries the meaning, the colour only supports it. */
 export const pill = (label: string, tone: Tone = 'neutral') => `<span class="pill ${tone}">${esc(label)}</span>`;
 
+/** The three kinds of job the apps create. */
 export type JobKind = 'SOS' | 'Booking' | 'Diagnostic';
+/** SOS (flag or SOS issue name), Diagnostic ("Diagnostic: …" service type) or Booking. */
 export function jobKind(j: { sos_active: boolean; service_type: string }): JobKind {
   if (j.sos_active || (SOS_ISSUES as readonly string[]).includes(j.service_type)) return 'SOS';
   if (j.service_type.startsWith('Diagnostic:')) return 'Diagnostic';
   return 'Booking';
 }
+/** Pill for a job kind; SOS is red. */
 export const kindPill = (k: JobKind) => pill(k, k === 'SOS' ? 'danger' : k === 'Diagnostic' ? 'info' : 'neutral');
 
 const STATUS: Record<string, [string, Tone]> = {
@@ -63,11 +74,14 @@ const STATUS: Record<string, [string, Tone]> = {
   completed: ['Completed', 'success'],
   cancelled: ['Cancelled', 'neutral'],
 };
+/** Pill with a plain-language job status ("Waiting for mechanic", "Completed"…). */
 export const jobStatusPill = (s: string) => pill(...(STATUS[s] ?? [s, 'neutral']));
 
+/** Pill for an account status: Active, Awaiting approval or Suspended. */
 export const userStatusPill = (s: string) =>
   s === 'active' ? pill('Active', 'success') : s === 'pending' ? pill('Awaiting approval', 'warning') : pill('Suspended', 'danger');
 
+/** Up to two initials for an avatar: "Sarah Nakato" → "SN". */
 export const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -76,22 +90,26 @@ export const initials = (name: string) =>
     .map((w) => w[0]!.toUpperCase())
     .join('');
 
+/** Avatar, name (a link when `href` is given) and a muted second line; "—" when there is no name. */
 export const person = (name: string | null, sub?: string | null, href?: string) =>
   name
     ? `<div class="person"><span class="avatar">${esc(initials(name))}</span><div><${href ? `a href="${href}"` : 'span'} class="strong">${esc(name)}</${href ? 'a' : 'span'}>${sub ? `<span class="muted small">${esc(sub)}</span>` : ''}</div></div>`
     : '<span class="muted">—</span>';
 
+/** Empty state for a list or card. */
 export const empty = (title: string, body = '') => `<div class="empty">${icon('circle-check', 28)}<p class="strong">${esc(title)}</p>${body ? `<p class="muted">${esc(body)}</p>` : ''}</div>`;
 
 /** POST button. `confirm` text is shown by admin.js before submitting. */
 export const action = (url: string, label: string, back: string, style: 'primary' | 'success' | 'danger' | 'ghost', confirm?: string) =>
   `<form method="post" action="${esc(url)}" class="inline"${confirm ? ` data-confirm="${esc(confirm)}"` : ''}><input type="hidden" name="back" value="${esc(back)}"><button class="btn ${style}">${esc(label)}</button></form>`;
 
+/** Link that opens a location in Google Maps, or "No location". */
 export const mapsLink = (lat: number | null, lng: number | null) =>
   lat != null && lng != null
     ? `<a href="https://www.google.com/maps?q=${Number(lat)},${Number(lng)}" target="_blank" rel="noopener noreferrer">${icon('map-pin', 15)} Open in Google Maps</a>`
     : '<span class="muted">No location</span>';
 
+/** Success messages shown after a form action, keyed by the `notice` query parameter (never echoed raw). */
 export const NOTICES: Record<string, string> = {
   approved: 'Mechanic approved. They can go online now.',
   reactivated: 'Account reactivated.',
@@ -103,6 +121,7 @@ export const NOTICES: Record<string, string> = {
   'push-sent': 'Test notification sent. It should appear on their phone within a few seconds.',
 };
 
+/** Badge counts for the sidebar. */
 export interface NavCounts {
   pending: number;
   resets: number;
@@ -119,6 +138,7 @@ const NAV: { href: string; label: string; icon: IconName; badge?: keyof NavCount
   { href: '/admin/settings', label: 'Settings', icon: 'settings' },
 ];
 
+/** Full admin page: sidebar, header, notices and body, with the shared CSS and admin.js. */
 export function page(opts: {
   title: string;
   active: string;
@@ -163,6 +183,7 @@ export function chips(base: string, param: string, current: string, options: [st
     .join('')}</div>`;
 }
 
+/** GET search form that keeps the current filters as hidden fields. */
 export function searchBox(base: string, q: string, placeholder: string, hidden: Record<string, string>) {
   return `<form class="search" method="get" action="${base}" role="search">${icon('search', 16)}<input type="search" name="q" value="${esc(q)}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}">${Object.entries(
     hidden,
@@ -172,6 +193,7 @@ export function searchBox(base: string, q: string, placeholder: string, hidden: 
     .join('')}</form>`;
 }
 
+/** Newer/older links for paged lists (shown only when there is more than one page). */
 export function pager(base: string, pageNo: number, hasMore: boolean, keep: Record<string, string>) {
   if (pageNo === 1 && !hasMore) return '';
   const link = (p: number, label: string) => {

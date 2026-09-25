@@ -1,3 +1,4 @@
+// Holds one SOS that couldn't be sent because the phone was offline, so it can be sent later.
 import type { SosInput } from '@/api';
 
 import { Keys, kv } from './storage';
@@ -10,6 +11,7 @@ export interface QueuedSos extends SosInput {
   userId: number;
 }
 
+/** Read, save or clear the queued SOS (at most one is kept). */
 export const sosQueue = {
   get: () => kv.get<QueuedSos | null>(Keys.sosQueue, null),
   set: (q: QueuedSos) => kv.set(Keys.sosQueue, q),

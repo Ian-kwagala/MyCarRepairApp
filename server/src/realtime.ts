@@ -8,6 +8,8 @@ import { loadUser, verifyAccessToken } from './auth';
 import { config } from './config';
 import { sendPush } from './push';
 
+// Real-time events for the apps (Socket.io), with push notifications for users whose app isn't connected.
+
 let io: Server | null = null;
 const connected = new Map<number, number>(); // userId → open sockets
 
@@ -42,6 +44,7 @@ export function attachRealtime(server: HttpServer) {
   return io;
 }
 
+/** Stops Socket.io and forgets connected users (server shutdown and tests). */
 export function closeRealtime() {
   void io?.close();
   io = null;

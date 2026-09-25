@@ -4,7 +4,9 @@ import { Activity, House, UserRound } from '@/components/icons';
 import { useNotifications } from '@/hooks/use-notifications';
 import { Font, useColors } from '@/theme';
 
-/** Owner tabs: Home · Activity · Profile. The garage opens from Home and Profile. */
+// Bottom tab bar for car owners.
+
+/** Owner tabs: Home · Activity · Profile (§9). The garage opens from Home and Profile; the Profile tab shows the unread-notification count. */
 export default function OwnerTabs() {
   const c = useColors();
   const { unread } = useNotifications();

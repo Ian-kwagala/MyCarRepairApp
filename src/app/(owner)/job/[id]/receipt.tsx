@@ -15,11 +15,17 @@ import { Space, useColors } from '@/theme';
 import { firstName, formatDateTime, formatUGX } from '@/utils/format';
 import { computeTotals, parseFeedback } from '@/utils/jobs';
 
-/** O11 Receipt & rating — pay summary, PDF (open/share), 1–5 stars + quick tags (1 review per job). */
+// Owner's receipt and review screen for a completed job.
+
+/**
+ * O11 Receipt & rating — pay summary, PDF (open/share), 1–5 stars + quick tags (1 review per job).
+ * After reviewing, the form is replaced by the submitted review.
+ */
 export default function ReceiptScreen() {
   const c = useColors();
   const id = Number(useLocalSearchParams<{ id: string }>().id);
   const q = useJob(id);
+  // Review form state (0 = no stars picked yet).
   const [rating, setRating] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
@@ -45,10 +51,13 @@ export default function ReceiptScreen() {
   }
 
   const totals = job.totals ?? computeTotals(job.quotes);
+  // Prefer the price saved at completion over a recalculation.
   const total = job.totalPrice || totals.total;
   const mechName = firstName(job.mechanic?.fullName) || 'your mechanic';
+  // The submitted review split back into tags and comment, for display.
   const existing = job.review ? parseFeedback(job.review.feedback) : null;
 
+  // Opens or shares the PDF receipt.
   const pdf = async (kind: 'open' | 'share') => {
     setPdfBusy(kind);
     try {
@@ -61,6 +70,7 @@ export default function ReceiptScreen() {
     }
   };
 
+  // Sends the review; the refetched job then includes it, which swaps the form for the review.
   const submit = async () => {
     if (!rating) return toast({ title: 'Pick a star rating', tone: 'warning' });
     setSaving(true);

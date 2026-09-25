@@ -19,7 +19,13 @@ import { Brand, Space, useColors } from '@/theme';
 import { confirm } from '@/utils/confirm';
 import { distanceKm, etaMinutes, formatKm } from '@/utils/geo';
 
-/** O3 SOS broadcasting → O4 mechanic found (live location, ETA, call). */
+// Owner's live SOS screen, shown right after sending an SOS.
+
+/**
+ * O3 SOS broadcasting → O4 mechanic found (live location, ETA, call). Shows the searching radar until a
+ * mechanic accepts, then their position and ETA; once they arrive, switches to the repair tracker.
+ * Keeps the screen awake throughout.
+ */
 export default function SosStatus() {
   useKeepScreenOn('sos');
   const c = useColors();
@@ -36,9 +42,11 @@ export default function SosStatus() {
   // Navy radar screen while searching; canvas once a mechanic is found.
   useStatusBar(!job.data || broadcasting ? 'light' : 'auto');
 
+  // After SOS_TIMEOUT_MS with no taker (counted from when the SOS was created, so it survives reopening
+  // the screen), switch to the "still searching" message and offer the support line.
   useEffect(() => {
     if (!job.data || !broadcasting) return;
-    const left = SOS_TIMEOUT_MS - (Date.now() - new Date(job.data.createdAt).getTime());
+    const left =SOS_TIMEOUT_MS - (Date.now() - new Date(job.data.createdAt).getTime());
     const t = setTimeout(() => setTimedOut(true), Math.max(0, left));
     return () => clearTimeout(t);
   }, [job.data, broadcasting]);
@@ -50,6 +58,7 @@ export default function SosStatus() {
     }
   }, [status, id]);
 
+  // Cancels the SOS after confirmation (only possible before a mechanic accepts).
   const cancel = async () => {
     if (!(await confirm('Cancel SOS?', 'Nearby mechanics will stop seeing your request.', 'Cancel request', true))) return;
     setCancelling(true);
@@ -66,6 +75,7 @@ export default function SosStatus() {
     }
   };
 
+  // Goes home; while still searching, first confirms that the SOS stays active.
   const leave = async () => {
     if (broadcasting && !(await confirm('Leave this screen?', 'Your SOS stays active. You can come back from Home.', 'Leave'))) return;
     router.replace('/');
@@ -92,6 +102,7 @@ export default function SosStatus() {
 
   const j = job.data;
   const mech = j?.mechanic;
+  // Map pins for the owner and mechanic (only when their positions are known), and the distance between.
   const me: MapPoint | null = j?.owner?.locationLat != null && j.owner.locationLng != null ? { lat: j.owner.locationLat, lng: j.owner.locationLng, label: 'You', kind: 'me' } : null;
   const mechPoint: MapPoint | null = mech?.locationLat != null && mech.locationLng != null ? { lat: mech.locationLat, lng: mech.locationLng, label: mech.fullName, kind: 'mechanic' } : null;
   const km = me && mechPoint ? distanceKm(me.lat, me.lng, mechPoint.lat, mechPoint.lng) : null;
@@ -112,8 +123,10 @@ export default function SosStatus() {
     );
   }
 
+  // O3 — still searching (also shown while the job first loads).
   if (!j || broadcasting) {
-    const nearby = params.nearby != null ? Number(params.nearby) : null;
+    // Mechanic count passed from the SOS screen; unknown if the screen was reopened later.
+    const nearby =params.nearby != null ? Number(params.nearby) : null;
     return (
       <View style={[styles.fill, { backgroundColor: Brand.navy, paddingTop: insets.top }]}>
         <OfflineBanner />

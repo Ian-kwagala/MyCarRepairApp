@@ -6,6 +6,8 @@ import { Radius, Space, useColors } from '@/theme';
 import type { MapPoint } from './map-card';
 import { Text } from './text';
 
+// Fallback "map" used when a real map can't be shown.
+
 /**
  * Map without the Google Maps SDK: lists the points with an "open in Google Maps" link each.
  * Used on web (react-native-maps has no web support) and on Android builds made without MAPS_KEY

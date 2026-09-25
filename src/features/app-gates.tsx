@@ -9,6 +9,8 @@ import { useStatusBarOutsideNavigator } from '@/hooks/use-status-bar';
 import { useSession } from '@/store/session';
 import { Space, useColors } from '@/theme';
 
+// Full-screen "gates" shown instead of the app: the biometric lock screen and the maintenance screen.
+
 /**
  * Resolves true when unlocked. Only a device with no biometric hardware or enrolment skips the check;
  * any authentication error counts as a failed unlock (the user can still sign in with a password).
@@ -38,6 +40,7 @@ export function LockScreen() {
   const [error, setError] = useState<string | null>(null);
   useStatusBarOutsideNavigator('light');
 
+  // Shows the fingerprint/Face ID prompt; unlocks the app on success.
   const tryUnlock = useCallback(() => {
     authenticate().then((ok) => {
       if (ok) unlock();
@@ -45,6 +48,7 @@ export function LockScreen() {
     });
   }, [unlock]);
 
+  // Prompt automatically as soon as the lock screen appears.
   useEffect(() => {
     tryUnlock();
   }, [tryUnlock]);

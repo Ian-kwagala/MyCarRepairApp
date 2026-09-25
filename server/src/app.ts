@@ -13,6 +13,9 @@ import { mechanicRouter } from './routes/mechanic';
 import { meRouter } from './routes/me';
 import { vehiclesRouter } from './routes/vehicles';
 
+// The Express app: security middleware, the /api/v1 routes, photos, receipts and the /admin console.
+
+/** Builds the Express app (index.ts adds the HTTP server and Socket.io; the tests reuse it). */
 export function createApp() {
   const app = express();
   app.set('trust proxy', 1); // behind the hosting provider's TLS proxy

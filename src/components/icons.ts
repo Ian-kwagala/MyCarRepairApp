@@ -1,5 +1,6 @@
 // Each icon comes from its own module. Importing from the 'lucide-react-native' entry point bundles all
 // ~1,900 icons (about 1.5 MB of JavaScript) because native release builds don't tree-shake. Add new icons here.
+/** Icon component and prop types (type-only, so they add nothing to the bundle). */
 export type { LucideIcon, LucideProps } from 'lucide-react-native';
 
 export { default as Activity } from 'lucide-react-native/icons/activity';

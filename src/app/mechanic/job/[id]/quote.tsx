@@ -11,7 +11,12 @@ import { queryClient } from '@/services/query-client';
 import { toast } from '@/store/toast';
 import { formatAmountInput, parseAmount } from '@/utils/format';
 
-/** M5 Quote — photo-first part quote; price in UGX with thousands separators; up to 5 photos. */
+// Mechanic screen for sending the owner a parts quote.
+
+/**
+ * M5 Quote — photo-first part quote; price in UGX with thousands separators; up to 5 photos.
+ * At least one photo is required so the owner can see what they're paying for.
+ */
 export default function QuotePart() {
   const id = Number(useLocalSearchParams<{ id: string }>().id);
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);

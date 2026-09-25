@@ -11,9 +11,11 @@ import { APP_ROLE } from '@/constants/app-variant';
 import { useSession } from '@/store/session';
 import { useColors } from '@/theme';
 
+// Registration screen for car owners and mechanics.
+
 type RoleOpt = 'owner' | 'mechanic';
 
-// Validation mirrors the server rules.
+// Validation mirrors the server rules. Mechanics must also give a garage name and location.
 const schema = z
   .object({
     fullName: z.string().trim().min(2, 'Enter your full name.').max(100),
@@ -44,8 +46,10 @@ export default function SignUp() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Returns a change handler for one form field.
   const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  // Validates the form (first error per field shown under it), then creates the account and signs in.
   const submit = async () => {
     setError(null);
     const parsed = schema.safeParse({ ...form, role });

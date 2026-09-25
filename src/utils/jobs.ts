@@ -1,6 +1,10 @@
 import type { ChecklistItem, Job, JobStatus, PartsQuote, Vehicle } from '@/models';
 import { SERVICE_FEE, SERVICE_INTERVAL_MONTHS } from '@/constants/config';
 
+// Job business logic shared by screens and the local store: progress stages, status labels and colours,
+// price totals, the "can finish" rule, service-due dates and review tags.
+
+/** The steps shown on the owner's job progress tracker. */
 export const STAGES = ['Sent', 'Accepted', 'Arrived', 'Fixing', 'Done'] as const;
 export type Stage = (typeof STAGES)[number];
 
@@ -27,10 +31,14 @@ export function stageIndex(job: Pick<Job, 'status' | 'checklist'>): number {
   }
 }
 
+/** Statuses of a job that is still in progress. */
 export const ACTIVE_STATUSES: JobStatus[] = ['pending', 'accepted', 'diagnosing', 'fixing', 'ready'];
+/** True while the job is still in progress. */
 export const isActive = (s: JobStatus) => ACTIVE_STATUSES.includes(s);
+/** True once the job is completed or cancelled. */
 export const isFinished = (s: JobStatus) => s === 'completed' || s === 'cancelled';
 
+/** User-facing name for a job status ("pending" shows as "Searching"). */
 export function statusLabel(status: JobStatus): string {
   switch (status) {
     case 'pending':
@@ -50,8 +58,10 @@ export function statusLabel(status: JobStatus): string {
   }
 }
 
+/** Colour family used for badges and banners. */
 export type Tone = 'info' | 'warning' | 'success' | 'danger' | 'neutral' | 'primary';
 
+/** Badge colour for a job status. */
 export function statusTone(status: JobStatus): Tone {
   switch (status) {
     case 'pending':
@@ -69,17 +79,20 @@ export function statusTone(status: JobStatus): Tone {
   }
 }
 
+/** Checklist progress: tasks done, total tasks and the rounded percentage. */
 export function progress(checklist: ChecklistItem[] | undefined) {
   const list = checklist ?? [];
   const done = list.filter((t) => t.isCompleted).length;
   return { done, total: list.length, pct: list.length ? Math.round((done / list.length) * 100) : 0 };
 }
 
+/** Job price: service fee + approved parts. Rejected and undecided quotes are not billed. */
 export function computeTotals(quotes: PartsQuote[] | undefined, serviceFee = SERVICE_FEE) {
   const approvedParts = (quotes ?? []).filter((q) => q.isApproved === true).reduce((s, q) => s + q.price, 0);
   return { serviceFee, approvedParts, total: serviceFee + approvedParts };
 }
 
+/** Quotes the owner hasn't approved or rejected yet. */
 export function pendingQuotes(job: Pick<Job, 'quotes'>) {
   return (job.quotes ?? []).filter((q) => q.isApproved === null);
 }
@@ -95,6 +108,7 @@ export function canFinish(job: Pick<Job, 'checklist' | 'quotes' | 'status'>) {
   };
 }
 
+/** "Make Model", or "Vehicle" if unknown. */
 export function vehicleLabel(v?: Pick<Vehicle, 'make' | 'model'> | null) {
   return v ? `${v.make} ${v.model}` : 'Vehicle';
 }
@@ -108,6 +122,7 @@ export function serviceDueInDays(v: Pick<Vehicle, 'lastServiceDate'>): number | 
   return Math.ceil((d.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
+/** Service-due message for a car ("Service due in 12 d", "…overdue by 3 d"), or null if unknown. */
 export function serviceDueText(v: Pick<Vehicle, 'lastServiceDate'>): string | null {
   const days = serviceDueInDays(v);
   if (days == null) return null;
@@ -124,13 +139,19 @@ export function composeFeedback(tags: string[], comment: string): string | null 
   return parts.length ? parts.join(' ') : null;
 }
 
+/** Reverse of composeFeedback: splits "[tag, tag] comment" back into tags and comment. */
 export function parseFeedback(feedback: string | null): { tags: string[]; comment: string } {
   if (!feedback) return { tags: [], comment: '' };
+  // Leading "[...]" holds the tags; the `s` flag lets the comment span several lines.
   const m = feedback.match(/^\[([^\]]*)\]\s*(.*)$/s);
   if (!m) return { tags: [], comment: feedback };
   return { tags: m[1].split(',').map((t) => t.trim()).filter(Boolean), comment: m[2] };
 }
 
+/**
+ * Whether a job is an SOS. `sosActive` is cleared once the job ends, so finished SOS jobs are recognised
+ * by their service type being one of the SOS issues.
+ */
 export function isSos(job: Pick<Job, 'sosActive' | 'serviceType'>, sosIssues: readonly string[]) {
   return job.sosActive || sosIssues.includes(job.serviceType);
 }

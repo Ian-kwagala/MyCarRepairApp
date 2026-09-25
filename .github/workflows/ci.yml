@@ -1,3 +1,5 @@
+# Continuous integration: on every pull request and every push to main, install dependencies,
+# then run lint, the TypeScript type-check and the Jest unit tests. Any failure fails the check.
 name: CI
 
 on:

@@ -1,3 +1,5 @@
+// The in-app notification centre: a per-user list of past events saved on the device, with the text
+// shown for each event type, read/unread tracking, and change listeners so badges and lists refresh.
 import type { AppNotification, RealtimeEvent, RealtimePayload } from '@/models';
 import { formatUGX } from '@/utils/format';
 
@@ -5,8 +7,10 @@ import { Keys, kv } from './storage';
 
 type Listener = (userId: number) => void;
 const listeners = new Set<Listener>();
+// Only the newest 100 notifications are kept per user.
 const MAX = 100;
 
+/** Calls `fn` with the user ID whenever that user's notification list changes; returns an unsubscribe function. */
 export function subscribeNotifications(fn: Listener) {
   listeners.add(fn);
   return () => {
@@ -14,13 +18,16 @@ export function subscribeNotifications(fn: Listener) {
   };
 }
 
+/** A user's saved notifications, newest first. */
 export async function listNotifications(userId: number): Promise<AppNotification[]> {
   return kv.get<AppNotification[]>(Keys.notifications(userId), []);
 }
 
 /** Text for the notification centre (O13) — mirrors the push texts in §8. */
 export function describeEvent(event: RealtimeEvent, p: RealtimePayload): { title: string; body: string } | null {
+  // Reads a string field from the payload, or '' if it's missing or not a string.
   const s = (k: string) => (typeof p[k] === 'string' ? (p[k] as string) : '');
+  // Server-supplied text wins over the built-in wording.
   if (typeof p.title === 'string' && typeof p.body === 'string') return { title: p.title, body: p.body };
   switch (event) {
     case 'new_job_pushed':
@@ -49,8 +56,10 @@ export function describeEvent(event: RealtimeEvent, p: RealtimePayload): { title
   }
 }
 
+/** Saves a new unread notification for an event at the top of the user's list. */
 export async function addNotification(userId: number, event: RealtimeEvent, payload: RealtimePayload) {
   const text = describeEvent(event, payload);
+  // Events with no user-facing text (e.g. live location) aren't stored.
   if (!text) return;
   const list = await listNotifications(userId);
   const n: AppNotification = {
@@ -68,6 +77,7 @@ export async function addNotification(userId: number, event: RealtimeEvent, payl
   listeners.forEach((l) => l(userId));
 }
 
+/** Marks every notification for the user as read. */
 export async function markAllRead(userId: number) {
   const list = await listNotifications(userId);
   await kv.set(
@@ -77,6 +87,7 @@ export async function markAllRead(userId: number) {
   listeners.forEach((l) => l(userId));
 }
 
+/** Marks one notification as read. */
 export async function markRead(userId: number, id: string) {
   const list = await listNotifications(userId);
   await kv.set(
@@ -86,6 +97,7 @@ export async function markRead(userId: number, id: string) {
   listeners.forEach((l) => l(userId));
 }
 
+/** Deletes all of the user's notifications. */
 export async function clearNotifications(userId: number) {
   await kv.remove(Keys.notifications(userId));
   listeners.forEach((l) => l(userId));

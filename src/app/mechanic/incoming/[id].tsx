@@ -16,19 +16,26 @@ import { queryClient } from '@/services/query-client';
 import { Brand, Font, Space } from '@/theme';
 import { distanceKm, etaMinutes, formatKm } from '@/utils/geo';
 
-/** M2 Incoming SOS — full screen, 30-s countdown, vibration; "Too late" state on 409. */
+// Full-screen alert that interrupts the mechanic when a new SOS arrives nearby.
+
+/**
+ * M2 Incoming SOS — full screen, 30-s countdown, vibration; "Too late" state on 409. Dismisses itself
+ * when the countdown runs out.
+ */
 export default function IncomingSos() {
   useStatusBar('light');
   const insets = useSafeAreaInsets();
   const id = Number(useLocalSearchParams<{ id: string }>().id);
   const job = useJob(id, { live: true });
   const coords = usePresence((s) => s.coords);
+  // Seconds left to respond.
   const [left, setLeft] = useState(INCOMING_SOS_SECONDS);
   const [state, setState] = useState<'ringing' | 'accepting' | 'late' | 'error'>('ringing');
   const [message, setMessage] = useState<string | null>(null);
   const [place, setPlace] = useState<string | null>(null);
   const [pulse] = useState(() => new Animated.Value(0));
 
+  // While open: block other SOS alerts from stacking, vibrate on repeat, pulse the bell. All stop on close.
   useEffect(() => {
     setIncomingOpen(true);
     if (Platform.OS !== 'web') Vibration.vibrate([0, 600, 400, 600, 400], true);
@@ -41,6 +48,7 @@ export default function IncomingSos() {
     };
   }, [pulse]);
 
+  // Countdown: tick once a second while ringing; close the alert at zero.
   useEffect(() => {
     if (state !== 'ringing') return;
     const t = setTimeout(() => {
@@ -53,6 +61,7 @@ export default function IncomingSos() {
   const j = job.data;
   const ownerLat = j?.owner?.locationLat;
   const ownerLng = j?.owner?.locationLng;
+  // Show the area name for the breakdown location, when the position is available.
   useEffect(() => {
     if (ownerLat != null && ownerLng != null) void reverseGeocode(ownerLat, ownerLng).then(setPlace);
   }, [ownerLat, ownerLng]);
@@ -74,12 +83,14 @@ export default function IncomingSos() {
     if (goneReason) Vibration.cancel();
   }, [goneReason]);
 
+  // Closes the alert (back to where the mechanic was, or the job board).
   function dismiss() {
     Vibration.cancel();
     if (router.canGoBack()) router.back();
     else router.replace('/mechanic');
   }
 
+  // Claims the job and opens it; a 409 means someone else was faster ("Too late").
   const accept = async () => {
     Vibration.cancel();
     setState('accepting');
@@ -100,6 +111,7 @@ export default function IncomingSos() {
     }
   };
 
+  // Distance from the server, or worked out from the mechanic's live position; plus the MM:SS countdown.
   const km = j?.distanceKm ?? (coords && ownerLat != null && ownerLng != null ? distanceKm(coords.lat, coords.lng, ownerLat, ownerLng) : null);
   const mm = String(Math.floor(left / 60)).padStart(2, '0');
   const ss = String(left % 60).padStart(2, '0');

@@ -14,13 +14,20 @@ import { toISODate } from '@/utils/format';
 import { haptic } from './button';
 import { Text } from './text';
 
+// Form inputs: text fields, segmented toggles, chips, big selection tiles, star ratings, a date strip
+// and photo pickers.
+
 export interface FieldProps extends TextInputProps {
   label: string;
+  /** Shown in red under the field, and turns the border red. */
   error?: string | null;
+  /** Helper text shown under the field when there's no error. */
   hint?: string;
+  /** Content inside the field on the right, e.g. a show-password button. */
   right?: ReactNode;
 }
 
+/** Labelled text input whose border highlights on focus and turns red on error. */
 export function TextField({ label, error, hint, right, style, ...rest }: FieldProps) {
   const c = useColors();
   const [focused, setFocused] = useState(false);
@@ -36,6 +43,7 @@ export function TextField({ label, error, hint, right, style, ...rest }: FieldPr
           accessibilityLabel={label}
           placeholderTextColor={c.textSubtle}
           maxFontSizeMultiplier={1.3}
+          // Track focus for the border colour, and still call any handlers passed in by the caller.
           onFocus={(e) => {
             setFocused(true);
             rest.onFocus?.(e);
@@ -60,7 +68,10 @@ export function TextField({ label, error, hint, right, style, ...rest }: FieldPr
   );
 }
 
-/** Two-to-four option toggle (role toggle, fuel, transmission, tabs). */
+/**
+ * Two-to-four option toggle (role toggle, fuel, transmission, tabs). `labels` overrides the text shown
+ * for an option, `counts` adds a number after it, and `dark` styles it for the navy header.
+ */
 export function Segmented<T extends string>({
   options,
   value,
@@ -108,6 +119,7 @@ export function Segmented<T extends string>({
   );
 }
 
+/** Pill-shaped on/off option, used for multi-select lists like review tags. */
 export function Chip({ label, selected, onPress }: { label: string; selected?: boolean; onPress?: () => void }) {
   const c = useColors();
   return (
@@ -174,6 +186,7 @@ export function Tile({
   );
 }
 
+/** Lays children out in equal-width columns (2 by default), wrapping onto new rows. */
 export function Grid({ children, columns = 2 }: { children: ReactNode[]; columns?: number }) {
   return (
     <View style={styles.grid}>
@@ -186,6 +199,7 @@ export function Grid({ children, columns = 2 }: { children: ReactNode[]; columns
   );
 }
 
+/** 1–5 star rating. Tappable when `onChange` is given, otherwise display-only. */
 export function Stars({ value, onChange, size = 36 }: { value: number; onChange?: (v: number) => void; size?: number }) {
   const c = useColors();
   return (
@@ -208,7 +222,7 @@ export function Stars({ value, onChange, size = 36 }: { value: number; onChange?
   );
 }
 
-/** Next-14-days date strip (O7). Past dates are not offered. */
+/** Next-14-days date strip (O7). Past dates are not offered. `value` and `onChange` use YYYY-MM-DD. */
 export function DateStrip({ value, onChange, days = 14 }: { value: string; onChange: (d: string) => void; days?: number }) {
   const c = useColors();
   const today = new Date();
@@ -244,6 +258,7 @@ export function DateStrip({ value, onChange, days = 14 }: { value: string; onCha
   );
 }
 
+/** Horizontal row of photo thumbnails, each with a remove (×) button when `onRemove` is given. */
 export function PhotoStrip({ uris, onRemove, size = 88 }: { uris: string[]; onRemove?: (i: number) => void; size?: number }) {
   const c = useColors();
   if (!uris.length) return null;
@@ -268,7 +283,10 @@ export function PhotoStrip({ uris, onRemove, size = 88 }: { uris: string[]; onRe
   );
 }
 
-/** Camera or library picker with compression; max photos enforced (≤ 5). */
+/**
+ * Camera or library picker with compression; max photos enforced (≤ 5). `existing` are already-saved
+ * photo URLs (when editing) and count toward `max`. The Camera/Gallery buttons hide once full.
+ */
 export function PhotoPicker({
   photos,
   onChange,
@@ -286,6 +304,7 @@ export function PhotoPicker({
 }) {
   const c = useColors();
   const remaining = max - photos.length - existing.length;
+  // Adds picked photos (capped at the limit). A denied permission shows a toast that opens Settings.
   const pick = async (source: PhotoSource) => {
     try {
       const got = await pickPhotos(source, remaining);

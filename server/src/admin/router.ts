@@ -41,6 +41,8 @@ import {
   type NavCounts,
 } from './ui';
 
+// The /admin console: every page and form action, their database queries, and the sign-in and CSRF checks.
+
 /**
  * Operations console for MyCarRepair staff: overview, mechanic approvals, jobs, owners, mechanics, password-reset
  * codes and app settings. Protected by HTTP Basic auth with ADMIN_PASSWORD (any username); disabled when unset.

@@ -7,6 +7,7 @@
  */
 import { Keys, kv } from '@/services/storage';
 
+/** A row of the `users` table. */
 export interface UserRow {
   id: number;
   full_name: string;
@@ -24,6 +25,7 @@ export interface UserRow {
   created_at: string;
 }
 
+/** A row of the `vehicles` table. */
 export interface VehicleRow {
   id: number;
   owner_id: number;
@@ -41,6 +43,7 @@ export interface VehicleRow {
   created_at: string;
 }
 
+/** A row of the `jobs` table. `start_code` is the code the owner gives the mechanic on arrival. */
 export interface JobRow {
   id: number;
   owner_id: number;
@@ -55,6 +58,7 @@ export interface JobRow {
   updated_at: string;
 }
 
+/** A row of the `job_checklists` table. */
 export interface ChecklistRow {
   id: number;
   job_id: number;
@@ -64,6 +68,7 @@ export interface ChecklistRow {
   completed_at: string | null;
 }
 
+/** A row of the `parts_quotes` table. */
 export interface QuoteRow {
   id: number;
   job_id: number;
@@ -74,6 +79,7 @@ export interface QuoteRow {
   created_at: string;
 }
 
+/** A row of the `reviews` table. */
 export interface ReviewRow {
   id: number;
   job_id: number;
@@ -92,8 +98,10 @@ export interface JobExtraRow {
   photo: string | null;
 }
 
+/** The whole local database, saved to device storage as one JSON document. */
 export interface LocalDb {
   version: 1;
+  // Last ID issued per table (like a SQL sequence).
   seq: Record<string, number>;
   users: UserRow[];
   vehicles: VehicleRow[];
@@ -107,6 +115,7 @@ export interface LocalDb {
   auth_tokens: { token: string; user_id: number; kind: 'access' | 'refresh'; created_at: string }[];
 }
 
+/** A fresh database with every table empty. */
 const empty = (): LocalDb => ({
   version: 1,
   seq: {},
@@ -121,9 +130,12 @@ const empty = (): LocalDb => ({
   auth_tokens: [],
 });
 
+// The database is loaded from storage once and then kept in memory.
 let cache: LocalDb | null = null;
+// Queue of pending transactions; each one waits for the previous to finish.
 let chain: Promise<unknown> = Promise.resolve();
 
+/** Returns the in-memory database, loading it from storage on first use (missing tables start empty). */
 async function load(): Promise<LocalDb> {
   if (!cache) cache = { ...empty(), ...(await kv.get<Partial<LocalDb>>(Keys.localDb, {})) } as LocalDb;
   return cache;
@@ -131,6 +143,7 @@ async function load(): Promise<LocalDb> {
 
 /** Read-only access. */
 export async function read<T>(fn: (db: LocalDb) => T): Promise<T> {
+  // Wait for queued writes so reads never see a half-finished transaction.
   await chain;
   return fn(await load());
 }
@@ -139,6 +152,7 @@ export async function read<T>(fn: (db: LocalDb) => T): Promise<T> {
 export function tx<T>(fn: (db: LocalDb) => T | Promise<T>): Promise<T> {
   const run = chain.then(async () => {
     const db = await load();
+    // Copy taken before changes so a failed transaction can be undone.
     const snapshot = JSON.stringify(db);
     try {
       const result = await fn(db);
@@ -149,16 +163,19 @@ export function tx<T>(fn: (db: LocalDb) => T | Promise<T>): Promise<T> {
       throw e;
     }
   });
+  // A failed transaction must not block the ones queued after it; the caller still gets the error via `run`.
   chain = run.catch(() => undefined);
   return run;
 }
 
+/** Issues the next auto-increment ID for a table. Call inside `tx` so the new counter is saved. */
 export function nextId(db: LocalDb, table: string): number {
   const n = (db.seq[table] ?? 0) + 1;
   db.seq[table] = n;
   return n;
 }
 
+/** Current time as an ISO string, the format every timestamp column uses. */
 export const now = () => new Date().toISOString();
 
 /** Photos are stored as a comma-separated column; each entry is URI-encoded so data: URIs survive. */
@@ -166,6 +183,7 @@ export function joinPaths(paths: string[]): string | null {
   return paths.length ? paths.map((p) => encodeURIComponent(p)).join(',') : null;
 }
 
+/** Reverse of joinPaths: splits a photo column back into a list of paths. */
 export function splitPaths(csv: string | null): string[] {
   if (!csv) return [];
   return csv
@@ -175,6 +193,7 @@ export function splitPaths(csv: string | null): string[] {
       try {
         return decodeURIComponent(p);
       } catch {
+        // Not URI-encoded (e.g. written by older code): use it as-is.
         return p;
       }
     });

@@ -10,19 +10,26 @@ import { APP_ROLE } from '@/constants/app-variant';
 import { useSession } from '@/store/session';
 import { Space, useColors } from '@/theme';
 
+// Sign-in screen.
+
 type RoleOpt = 'owner' | 'mechanic';
 
-/** A2 Sign in — role toggle like the web; email or phone + password. */
+/**
+ * A2 Sign in — role toggle like the web; email or phone + password. The role toggle only appears in the
+ * dev build; the store apps are fixed to their own role.
+ */
 export default function SignIn() {
   const c = useColors();
   const signIn = useSession((s) => s.signIn);
   const [role, setRole] = useState<RoleOpt>(APP_ROLE ?? 'owner');
+  // `show` toggles password visibility.
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Logs in and stores the session; the root layout then routes to the right home screen.
   const submit = async () => {
     setError(null);
     if (!identifier.trim() || !password) {

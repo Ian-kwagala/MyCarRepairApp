@@ -16,6 +16,8 @@ import { confirm } from '@/utils/confirm';
 import { formatUGX } from '@/utils/format';
 import { computeTotals } from '@/utils/jobs';
 
+// Owner screen (opens as a modal) for approving or declining a mechanic's parts quote.
+
 /** O10 Parts approval — decide before purchase. Shows the new total if approved. Decision is final. */
 export default function QuoteSheet() {
   const c = useColors();
@@ -26,6 +28,7 @@ export default function QuoteSheet() {
   const q = useQuoteWithJob(quoteId, params.jobId ? Number(params.jobId) : undefined);
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
 
+  // Close the modal; if opened directly from a notification with no history, go home.
   const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
   if (!q.data) {
@@ -38,8 +41,11 @@ export default function QuoteSheet() {
 
   const { job, quote } = q.data;
   const totals = computeTotals(job.quotes, job.totals?.serviceFee ?? config.serviceFee);
-  const newTotal = totals.total + (quote.isApproved === null ? quote.price : 0);
+  // What the bill would become if this (still undecided) quote is approved.
+  const newTotal =totals.total + (quote.isApproved === null ? quote.price : 0);
 
+  // Confirms, sends the decision, refreshes the job and closes. On failure, reloads in case it was
+  // already decided elsewhere.
   const decide = async (decision: 'approve' | 'reject') => {
     const ok = await confirm(
       decision === 'approve' ? 'Approve this part?' : 'Decline this part?',

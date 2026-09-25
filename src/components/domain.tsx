@@ -13,7 +13,10 @@ import { Card, Row } from './layout';
 import { StatusPill } from './feedback';
 import { Text } from './text';
 
-/** O9 5-stage timeline: Sent · Accepted · Arrived · Fixing · Done. */
+// Car-repair-specific components: job timeline, checklist rows, quote and vehicle cards, job list items,
+// avatars, stat tiles, the SOS radar animation, the earnings chart and the "can't finish yet" notice.
+
+/** O9 5-stage timeline: Sent · Accepted · Arrived · Fixing · Done. Completed stages are green with a tick. */
 export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist'> }) {
   const c = useColors();
   const idx = stageIndex(job);
@@ -23,6 +26,7 @@ export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist'> 
         const done = i <= idx;
         const current = i === idx;
         return (
+          // Each stage is a dot with a connecting line on either side (hidden at the two ends).
           <View key={s} style={styles.stage}>
             <View style={styles.stageLine}>
               <View style={[styles.line, { backgroundColor: i === 0 ? 'transparent' : done ? c.success : c.border }]} />
@@ -54,6 +58,10 @@ export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist'> 
   );
 }
 
+/**
+ * One checklist task: a tickable checkbox, the task's photo thumbnail if any, and a camera button when
+ * `onPhoto` is given. Read-only when `onToggle` is omitted.
+ */
 export function ChecklistRow({
   item,
   onToggle,
@@ -98,12 +106,14 @@ export function ChecklistRow({
   );
 }
 
+/** Approved / Declined / Waiting pill for a parts quote. */
 export function QuoteStatus({ quote }: { quote: PartsQuote }) {
   if (quote.isApproved === true) return <StatusPill label="Approved" tone="success" />;
   if (quote.isApproved === false) return <StatusPill label="Declined" tone="neutral" />;
   return <StatusPill label="Waiting" tone="warning" />;
 }
 
+/** Parts quote summary: first photo, part name, price and status, with a "Review" link while undecided. */
 export function QuoteCard({ quote, onPress }: { quote: PartsQuote; onPress?: () => void }) {
   const c = useColors();
   return (
@@ -138,6 +148,7 @@ export function QuoteCard({ quote, onPress }: { quote: PartsQuote; onPress?: () 
   );
 }
 
+/** Square car photo, or a car icon placeholder if the car has no photos. */
 export function VehicleThumb({ vehicle, size = 64 }: { vehicle: Pick<Vehicle, 'photos'>; size?: number }) {
   const c = useColors();
   return vehicle.photos[0] ? (
@@ -149,6 +160,10 @@ export function VehicleThumb({ vehicle, size = 64 }: { vehicle: Pick<Vehicle, 'p
   );
 }
 
+/**
+ * Car summary card: photo, name, plate and specs, plus the service-due line (orange when due within
+ * 14 days or overdue). `compact` hides mileage/tyre size and uses a smaller photo.
+ */
 export function VehicleCard({ vehicle, onPress, compact }: { vehicle: Vehicle; onPress?: () => void; compact?: boolean }) {
   const c = useColors();
   const due = serviceDueInDays(vehicle);
@@ -181,6 +196,11 @@ export function VehicleCard({ vehicle, onPress, compact }: { vehicle: Vehicle; o
   );
 }
 
+/**
+ * Job row for lists. Shows the service, SOS badge, status, car and the other party's name
+ * (`showMechanic` for owners, the owner's name for mechanics). The bottom-right shows, in order of
+ * priority: the final price (completed), the distance, or how many quotes are waiting.
+ */
 export function JobListItem({
   job,
   onPress,
@@ -235,6 +255,7 @@ export function JobListItem({
   );
 }
 
+/** Round avatar showing the person's initials. */
 export function Avatar({ name, size = 48, dark }: { name: string | null | undefined; size?: number; dark?: boolean }) {
   const c = useColors();
   return (
@@ -252,6 +273,7 @@ export function Avatar({ name, size = 48, dark }: { name: string | null | undefi
   );
 }
 
+/** A big number with a small label under it, for dashboard stats. */
 export function StatTile({ value, label, dark }: { value: string; label: string; dark?: boolean }) {
   const c = useColors();
   return (
@@ -269,6 +291,7 @@ export function StatTile({ value, label, dark }: { value: string; label: string;
 /** SOS radar animation (O3). */
 export function Radar({ color, size = 200 }: { color: string; size?: number }) {
   const [rings] = useState(() => [new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]);
+  // Three rings, started 0.6 s apart, each repeatedly growing from the centre and fading out.
   useEffect(() => {
     const anims = rings.map((v, i) =>
       Animated.loop(
@@ -302,9 +325,10 @@ export function Radar({ color, size = 200 }: { color: string; size?: number }) {
   );
 }
 
-/** Simple bar chart for earnings (M6). */
+/** Simple bar chart for earnings (M6). The last bar (the current period) is highlighted in orange. */
 export function BarChart({ data, highlightLast = true }: { data: { label: string; amount: number }[]; highlightLast?: boolean }) {
   const c = useColors();
+  // Bars scale to the tallest one (max 120 pt); at least 1 avoids dividing by zero when all are 0.
   const max = Math.max(1, ...data.map((d) => d.amount));
   return (
     <View style={styles.chart} accessibilityLabel={`Earnings chart: ${data.map((d) => `${d.label} ${formatUGX(d.amount)}`).join(', ')}`}>
@@ -327,6 +351,7 @@ export function BarChart({ data, highlightLast = true }: { data: { label: string
   );
 }
 
+/** Padlock line explaining why a job can't be finished yet (open tasks / undecided quotes). Hidden when nothing blocks it. */
 export function FinishLock({ openTasks, openQuotes }: { openTasks: number; openQuotes: number }) {
   const c = useColors();
   if (!openTasks && !openQuotes) return null;

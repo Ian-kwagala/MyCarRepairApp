@@ -21,14 +21,22 @@ import { IconButton } from './button';
 import { OfflineBanner } from './feedback';
 import { Text } from './text';
 
+// Layout building blocks used by every screen: the screen frame with header, cards, sections, rows and
+// dividers.
+
 export interface HeaderProps {
   title?: string;
+  /** Small uppercase line above the title (e.g. "Step 1 of 3"). */
   eyebrow?: string;
+  /** Show a back button: true goes back (or home if there's no history), a function runs custom logic. */
   back?: boolean | (() => void);
+  /** Content on the right side of the header, e.g. icon buttons. */
   right?: ReactNode;
+  /** Navy header with white text. */
   dark?: boolean;
 }
 
+/** Top bar of a screen: optional back button, eyebrow + title, and right-hand actions. */
 export function Header({ title, eyebrow, back, right, dark }: HeaderProps) {
   const c = useColors();
   const fg = dark ? c.onHeader : c.text;
@@ -55,10 +63,14 @@ export function Header({ title, eyebrow, back, right, dark }: HeaderProps) {
 
 export interface ScreenProps extends HeaderProps {
   children: ReactNode;
+  /** Wrap content in a ScrollView (default true). */
   scroll?: boolean;
+  /** Pull-to-refresh state and handler. */
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** Actions pinned to the bottom of the screen. */
   footer?: ReactNode;
+  /** Extra content drawn inside the header area, below the title. */
   headerContent?: ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
   noHeader?: boolean;
@@ -82,6 +94,7 @@ export function Screen({
   const c = useColors();
   const insets = useSafeAreaInsets();
   const headerBg = header.dark ? c.header : c.background;
+  // Light status-bar text on the navy header; theme default otherwise.
   useStatusBar(header.dark ? 'light' : 'auto');
   const body = scroll ? (
     <ScrollView
@@ -96,6 +109,7 @@ export function Screen({
   ) : (
     <View style={[{ flex: 1 }, contentStyle]}>{children}</View>
   );
+  // The keyboard-avoiding wrapper keeps the footer button above the on-screen keyboard on iOS.
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
       <View style={{ backgroundColor: headerBg, paddingTop: insets.top }}>
@@ -119,6 +133,7 @@ export function Screen({
   );
 }
 
+/** Rounded content box. With `onPress` it becomes a button that dims and shrinks slightly when pressed. */
 export function Card({
   children,
   style,
@@ -147,6 +162,7 @@ export function Card({
   );
 }
 
+/** A titled group of content, with an optional action (like "See all") beside the title. */
 export function Section({ title, action, children, style }: { title: string; action?: ReactNode; children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return (
     <View style={[{ gap: Space.sm, marginTop: Space.xl }, style]}>
@@ -159,10 +175,12 @@ export function Section({ title, action, children, style }: { title: string; act
   );
 }
 
+/** Lays children out side by side, vertically centred, with a gap. */
 export function Row({ children, gap = Space.sm, style }: { children: ReactNode; gap?: number; style?: StyleProp<ViewStyle> }) {
   return <View style={[{ flexDirection: 'row', alignItems: 'center', gap }, style]}>{children}</View>;
 }
 
+/** Menu-style row: icon, title, subtitle and right-hand content. Tappable when `onPress` is given; `danger` makes it red. */
 export function ListRow({
   icon: Icon,
   title,
@@ -202,6 +220,7 @@ export function ListRow({
   );
 }
 
+/** Thin horizontal separator line. */
 export function Divider() {
   const c = useColors();
   return <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.border, marginVertical: Space.xs }} />;

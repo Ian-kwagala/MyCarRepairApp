@@ -1,9 +1,12 @@
+// In-process event bus for local mode. The local store emits events here in place of the server's
+// Socket.IO rooms, and LocalRealtime (realtime.ts) delivers them to the signed-in user.
 import type { RealtimeEvent, RealtimePayload } from '@/models';
 import { addNotification } from '@/services/notification-store';
 
 type Listener = (userId: number, event: RealtimeEvent, payload: RealtimePayload) => void;
 const listeners = new Set<Listener>();
 
+/** Subscribes to every event emitted on the bus; returns an unsubscribe function. */
 export function listen(fn: Listener) {
   listeners.add(fn);
   return () => {

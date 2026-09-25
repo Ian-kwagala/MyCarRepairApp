@@ -1,4 +1,5 @@
 // Icon shapes from Lucide (ISC license, https://lucide.dev), inlined so the admin page loads nothing external.
+/** SVG inner markup per icon name, drawn on a 24×24 grid with the stroke styles set by `icon()`. */
 export const ICONS = {
   'layout-dashboard': '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
   'user-check': '<path d="m16 11 2 2 4-4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>',
@@ -19,4 +20,5 @@ export const ICONS = {
   'power': '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
 } as const;
 
+/** Names of the available admin icons. */
 export type IconName = keyof typeof ICONS;

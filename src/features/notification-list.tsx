@@ -11,6 +11,9 @@ import { groupByDate, timeAgo } from '@/utils/format';
 
 import { linkFor } from './realtime-bridge';
 
+// The notification history list, grouped by day, shared by the owner and mechanic notification screens.
+
+// Icon per event type; anything not listed uses the calendar icon.
 const ICONS: Partial<Record<RealtimeEvent, LucideIcon>> = {
   new_job_pushed: Siren,
   job_taken: Car,
@@ -23,7 +26,10 @@ const ICONS: Partial<Record<RealtimeEvent, LucideIcon>> = {
   mechanic_approved: BadgeCheck,
 };
 
-/** O13 Notification centre — history with deep links. */
+/**
+ * O13 Notification centre — history with deep links. Unread items are tinted and show a dot; tapping one
+ * marks it read and opens the related screen.
+ */
 export function NotificationList({ items }: { items: AppNotification[] }) {
   const c = useColors();
   const user = useUser();

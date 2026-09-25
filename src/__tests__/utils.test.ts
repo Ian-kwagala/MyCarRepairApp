@@ -1,9 +1,12 @@
 /// <reference types="jest" />
+// Unit tests for the pure helper functions: money formatting, job stages, billing, the finish lock,
+// review tags, phone numbers, service-due dates, distances and date grouping.
 import { composeFeedback, canFinish, computeTotals, parseFeedback, serviceDueInDays, stageIndex } from '@/utils/jobs';
 import { dateGroup, formatAmountInput, formatUGX, normalizePhone, parseAmount } from '@/utils/format';
 import { distanceKm } from '@/utils/geo';
 import type { ChecklistItem, PartsQuote } from '@/models';
 
+// Minimal test fixtures: a checklist task (done or not) and a quote (approved / rejected / pending).
 const task = (done: boolean): ChecklistItem => ({ id: 1, jobId: 1, taskDescription: 't', isCompleted: done, photoUrl: null, completedAt: null });
 const quote = (price: number, isApproved: boolean | null): PartsQuote => ({ id: 1, jobId: 1, partName: 'p', price, photos: [], isApproved, createdAt: '' });
 

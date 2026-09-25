@@ -2,6 +2,8 @@ import { useFocusEffect } from 'expo-router';
 import { setStatusBarStyle, type StatusBarStyle } from 'expo-status-bar';
 import { useCallback, useEffect } from 'react';
 
+// Hooks for setting the colour of the phone's status bar (clock, battery) per screen.
+
 /**
  * Status-bar text colour for the focused screen: 'light' on navy headers, 'auto' (follows the theme)
  * on canvas screens. Set on focus so going back restores the right style.

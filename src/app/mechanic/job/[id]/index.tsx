@@ -38,7 +38,12 @@ import { formatDate, formatUGX } from '@/utils/format';
 import { distanceKm, etaMinutes, formatKm } from '@/utils/geo';
 import { canFinish, computeTotals, parseFeedback, progress, statusLabel, vehicleLabel } from '@/utils/jobs';
 
-/** M3 En route (accepted) → M4 Digital job card (fixing) → completion summary. */
+// Mechanic's screen for one job. Shows a different view for each stage of the job.
+
+/**
+ * M3 En route (accepted) → M4 Digital job card (fixing) → completion summary. An open job that hasn't
+ * been accepted yet shows its details with an Accept button.
+ */
 export default function MechanicJob() {
   const id = Number(useLocalSearchParams<{ id: string }>().id);
   const q = useJob(id, { live: true });
@@ -56,12 +61,14 @@ export default function MechanicJob() {
   return <JobCard job={job} refreshing={q.isRefetching} refetch={() => q.refetch()} />;
 }
 
+/** Refreshes the job and the mechanic's lists; if an updated `job` is given, shows it immediately. */
 function invalidate(id: number, job?: Job) {
   if (job) queryClient.setQueryData(['job', id], job);
   void queryClient.invalidateQueries({ queryKey: ['job', id] });
   void queryClient.invalidateQueries({ queryKey: ['mechanic'] });
 }
 
+/** Not yet accepted: job details and an Accept button. Contact details stay hidden until accepted. */
 function OpenJob({ job }: { job: Job }) {
   const [busy, setBusy] = useState(false);
   const accept = async () => {
@@ -98,6 +105,7 @@ function EnRoute({ job, refetch }: { job: Job; refetch: () => void }) {
   const coords = usePresence((s) => s.coords);
   const [busy, setBusy] = useState(false);
   const o = job.owner;
+  // Where the car is (the owner's position), the distance from the mechanic, and the map pins.
   const dest = o?.locationLat != null && o.locationLng != null ? { lat: o.locationLat, lng: o.locationLng } : null;
   const km = dest && coords ? distanceKm(coords.lat, coords.lng, dest.lat, dest.lng) : null;
   const points = [
@@ -105,6 +113,7 @@ function EnRoute({ job, refetch }: { job: Job; refetch: () => void }) {
     coords ? ({ ...coords, label: 'You', kind: 'me' } as MapPoint) : null,
   ].filter(Boolean) as MapPoint[];
 
+  // Marks arrival; the job moves to "fixing" and this screen switches to the job card.
   const arrived = async () => {
     setBusy(true);
     try {
@@ -167,12 +176,15 @@ function EnRoute({ job, refetch }: { job: Job; refetch: () => void }) {
 /** M4 Digital job card — tap tasks, photo proof, lock rules, quotes. */
 function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; refetch: () => void }) {
   const c = useColors();
+  // ID of the task being saved, so its row is disabled meanwhile.
   const [busyTask, setBusyTask] = useState<number | null>(null);
   const [finishing, setFinishing] = useState(false);
   const pr = progress(job.checklist);
+  // Whether "Finish job" is allowed, and what's still blocking it.
   const lock = canFinish(job);
   const totals = job.totals ?? computeTotals(job.quotes);
 
+  // Ticks or unticks a task.
   const toggle = async (t: ChecklistItem) => {
     setBusyTask(t.id);
     try {
@@ -186,6 +198,7 @@ function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; 
     }
   };
 
+  // Takes a photo as proof for a task, and marks the task done with it.
   const photo = async (t: ChecklistItem) => {
     try {
       const [p] = await pickPhotos('camera', 1);
@@ -201,6 +214,7 @@ function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; 
     }
   };
 
+  // Completes the job after confirming the total; the owner then gets the receipt.
   const finish = async () => {
     if (!lock.ok) return;
     if (!(await confirm('Finish job?', `Total ${formatUGX(totals.total)} will be billed and the receipt sent to the owner.`, 'Finish job'))) return;
@@ -283,10 +297,12 @@ function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; 
   );
 }
 
+/** Finished job: total, receipt PDF, the owner's review and the parts. Cancelled jobs just say so. */
 function Summary({ job }: { job: Job }) {
   const c = useColors();
   const [busy, setBusy] = useState<'open' | 'share' | null>(null);
   const review = job.review ? parseFeedback(job.review.feedback) : null;
+  // Opens or shares the PDF receipt.
   const pdf = async (kind: 'open' | 'share') => {
     setBusy(kind);
     try {

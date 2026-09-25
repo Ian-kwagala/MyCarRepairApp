@@ -30,6 +30,8 @@ import { Brand, Radius, Space, useColors } from '@/theme';
 import { greeting } from '@/utils/format';
 import { pendingQuotes, progress, statusLabel, statusTone } from '@/utils/jobs';
 
+// Owner Home tab.
+
 /** O1 Owner home — fastest path to SOS (1 tap), services, active repair, garage. */
 export default function OwnerHome() {
   const c = useColors();
@@ -41,6 +43,8 @@ export default function OwnerHome() {
   const [place, setPlace] = useState<string | null>(null);
   const [locGranted, setLocGranted] = useState<boolean | null>(null);
 
+  // Show the owner's area in the header. Only checks permission here (never prompts); the prompt waits
+  // until they send an SOS.
   useEffect(() => {
     void (async () => {
       try {
@@ -57,7 +61,8 @@ export default function OwnerHome() {
   }, []);
 
   const hasCar = (vehicles.data?.length ?? 0) > 0;
-  const needCar = (target: '/sos' | '/book' | '/diagnostics') => () => {
+  // Every service needs a car: without one, send the owner to add a car first, then on to `target`.
+  const needCar =(target: '/sos' | '/book' | '/diagnostics') => () => {
     if (!vehicles.isLoading && !hasCar) router.push({ pathname: '/vehicle/add', params: { then: target } });
     else router.push(target);
   };
@@ -167,6 +172,7 @@ export default function OwnerHome() {
   );
 }
 
+/** Square shortcut tile for a service (Book Service, Diagnostics). */
 function ServiceCard({ icon: Icon, title, sub, onPress }: { icon: typeof Siren; title: string; sub: string; onPress: () => void }) {
   const c = useColors();
   return (
@@ -184,11 +190,16 @@ function ServiceCard({ icon: Icon, title, sub, onPress }: { icon: typeof Siren; 
   );
 }
 
+/**
+ * Summary card for a job in progress. Opens the live SOS screen while an SOS is searching or the
+ * mechanic is on the way, otherwise the job details. An orange edge flags quotes awaiting approval.
+ */
 function ActiveRepairCard({ job }: { job: Job }) {
   const c = useColors();
   const pr = progress(job.checklist);
   const quotes = pendingQuotes(job).length;
   const isSosSearch = job.sosActive && (job.status === 'pending' || job.status === 'accepted');
+  // Status line built from whichever parts apply, joined with " · ".
   const detail = [
     job.status === 'pending' ? (job.sosActive ? 'Finding a mechanic…' : 'Waiting for a mechanic to accept') : null,
     job.status === 'accepted' ? `${job.mechanic?.fullName ?? 'Mechanic'} ${job.sosActive ? 'is on the way' : 'accepted'}` : null,

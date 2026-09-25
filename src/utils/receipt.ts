@@ -3,10 +3,16 @@ import type { Job } from '@/models';
 import { formatDateTime, formatUGX } from './format';
 import { computeTotals } from './jobs';
 
-const esc = (s: string | null | undefined) =>
+// Builds the HTML for a job receipt, which is then turned into a PDF (or shown directly on web).
+
+/** Escapes text for safe insertion into HTML, so names and part names can't inject markup. */
+const esc =(s: string | null | undefined) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-/** Receipt layout (the server renders the same content with PDFKit). */
+/**
+ * Receipt layout (the server renders the same content with PDFKit). Lists the job, vehicle, mechanic
+ * and customer, the charges (service fee + approved parts), declined quotes, and the completed checklist.
+ */
 export function receiptHtml(job: Job, serviceFee: number): string {
   const totals = job.totals ?? computeTotals(job.quotes, serviceFee);
   const approved = (job.quotes ?? []).filter((q) => q.isApproved === true);

@@ -7,9 +7,12 @@ import { Brand, Radius } from '@/theme';
 
 import { MapFallback } from './map-fallback';
 
+// Native map card (iOS/Android). Web uses map-card.web.tsx instead.
+
 /** Google Maps on Android needs an API key (MAPS_KEY at build time); iOS uses Apple Maps without one. */
 const mapsAvailable = Platform.OS !== 'android' || Constants.expoConfig?.extra?.mapsEnabled === true;
 
+/** A pin on the map; `kind` sets its colour. */
 export interface MapPoint {
   lat: number;
   lng: number;
@@ -25,10 +28,12 @@ export function MapCard({ points, height = 220 }: { points: MapPoint[]; height?:
   return <NativeMap points={points} height={height} />;
 }
 
+/** The real map. Zooms to fit all pins whenever they move noticeably. */
 function NativeMap({ points, height }: { points: MapPoint[]; height: number }) {
   const ref = useRef<MapView>(null);
   const valid = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-  const key = valid.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|');
+  // Positions rounded to ~10 m, so tiny GPS jitter doesn't re-zoom the map.
+  const key =valid.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|');
 
   useEffect(() => {
     if (!ref.current || valid.length < 2) return;

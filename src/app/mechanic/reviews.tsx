@@ -7,7 +7,9 @@ import { Space } from '@/theme';
 import { formatDate } from '@/utils/format';
 import { parseFeedback } from '@/utils/jobs';
 
-/** Mechanic reviews — visible reputation. */
+// Mechanic screen listing the reviews owners have left.
+
+/** Mechanic reviews — visible reputation. Average rating on top, then each review, newest first. */
 export default function Reviews() {
   const q = useMyReviews();
   return (
@@ -30,6 +32,7 @@ export default function Reviews() {
             </Text>
           </Card>
           {q.data.reviews.map((r) => {
+            // Split the stored feedback into quick tags and the free-text comment.
             const fb = parseFeedback(r.feedback);
             return (
               <Card key={r.id} style={{ gap: 6 }}>

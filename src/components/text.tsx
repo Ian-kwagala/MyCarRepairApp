@@ -2,8 +2,12 @@ import { Text as RNText, type TextProps, type TextStyle } from 'react-native';
 
 import { Font, useColors } from '@/theme';
 
-type Variant = 'display' | 'title' | 'heading' | 'body' | 'bodyStrong' | 'caption' | 'label' | 'money';
-type ToneKey = 'text' | 'textMuted' | 'textSubtle' | 'primary' | 'danger' | 'success' | 'info' | 'onHeader' | 'onPrimary' | 'warning';
+// The app's Text component: every piece of text uses it so fonts, sizes and colours stay consistent.
+
+/** Text styles, from large headings down to small captions and labels. */
+type Variant ='display' | 'title' | 'heading' | 'body' | 'bodyStrong' | 'caption' | 'label' | 'money';
+/** Which palette colour the text uses. */
+type ToneKey ='text' | 'textMuted' | 'textSubtle' | 'primary' | 'danger' | 'success' | 'info' | 'onHeader' | 'onPrimary' | 'warning';
 
 const variants: Record<Variant, TextStyle> = {
   display: { fontFamily: Font.heading, fontSize: 32, lineHeight: 38 },
@@ -17,12 +21,17 @@ const variants: Record<Variant, TextStyle> = {
   money: { fontFamily: Font.heading, fontSize: 28, lineHeight: 34 },
 };
 
+/** Props: any React Native Text prop, plus a style variant, a colour tone and centring. */
 export interface AppTextProps extends TextProps {
   variant?: Variant;
   tone?: ToneKey;
   center?: boolean;
 }
 
+/**
+ * Themed text. Captions and labels default to the muted colour. System font scaling is capped at 1.3×
+ * so large accessibility sizes don't break layouts.
+ */
 export function Text({ variant = 'body', tone, center, style, ...rest }: AppTextProps) {
   const c = useColors();
   const defaultTone: ToneKey = variant === 'caption' || variant === 'label' ? 'textMuted' : 'text';

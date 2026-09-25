@@ -7,16 +7,25 @@ import { errorMessage } from '@/api/errors';
 import { Button, InlineNotice, Screen, Text, TextField } from '@/components';
 import { toast } from '@/store/toast';
 
-/** A4 Forgot password / OTP. */
+// Password reset screen.
+
+/**
+ * A4 Forgot password / OTP. Two steps: enter your phone/email, then prove it's you and choose a new
+ * password. The proof is an SMS/email code with the real backend, or retyping the account's phone
+ * number in local mode.
+ */
 export default function ForgotPassword() {
   const config = useConfig();
   const [identifier, setIdentifier] = useState('');
+  // null = step 1; once set, how the server wants the user verified (step 2).
   const [step, setStep] = useState<ForgotPasswordResult | null>(null);
+  // The OTP code, or the phone number in local mode.
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Step 1: look up the account and learn how to verify it.
   const request = async () => {
     setError(null);
     if (!identifier.trim()) return setError('Enter your phone or email.');
@@ -30,6 +39,7 @@ export default function ForgotPassword() {
     }
   };
 
+  // Step 2: set the new password, then go to sign-in.
   const reset = async () => {
     setError(null);
     setLoading(true);

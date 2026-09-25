@@ -1,4 +1,8 @@
 /* global jest */
+// Runs before every Jest test file. Replaces native Expo modules (which can't run in Node) with small fakes
+// so the local data store and utilities can be tested without a device.
+
+// In-memory AsyncStorage.
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
@@ -14,6 +18,7 @@ jest.mock('expo-crypto', () => {
   };
 });
 
+// PDF receipts, image resizing, the photo picker and the file system are stubbed: tests only need them to exist.
 jest.mock('expo-print', () => ({ printToFileAsync: async () => ({ uri: 'file:///receipt.pdf' }), printAsync: async () => {} }));
 jest.mock('expo-image-manipulator', () => ({ ImageManipulator: { manipulate: () => ({}) }, SaveFormat: { JPEG: 'jpeg' } }));
 jest.mock('expo-image-picker', () => ({}));

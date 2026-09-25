@@ -34,6 +34,7 @@ function loadAccount(): ServiceAccount | null {
   return account;
 }
 
+/** True when a usable Firebase service-account key is configured. */
 export const fcmEnabled = () => loadAccount() !== null;
 
 const b64url = (v: string | Buffer) => Buffer.from(v).toString('base64url');
@@ -57,6 +58,7 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
   return cached.token;
 }
 
+/** One notification: the text shown, the data the app receives on tap, and the Android channel. */
 export interface FcmNotice {
   title: string;
   body: string;

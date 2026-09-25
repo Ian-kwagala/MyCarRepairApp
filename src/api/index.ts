@@ -1,3 +1,5 @@
+// Entry point for all data access. Chooses between the on-device local store and the real backend, and
+// exports the single `api` and `realtime` clients that every screen and hook uses.
 import Constants from 'expo-constants';
 
 import { setWebTokenPersistence } from '@/services/storage';
@@ -29,12 +31,16 @@ const apiUrl = resolveApiUrl();
 // Web + remote: keep tokens in memory only. Local mode keeps its whole store in browser storage anyway.
 setWebTokenPersistence(!apiUrl);
 
+/** The local store, exposed for local-only developer tools (wipe data, self-approve); null when using the backend. */
 export const localApi = apiUrl ? null : new LocalApiClient();
 
+/** The API client used by the whole app. */
 export const api: ApiClient = localApi ?? new RemoteApiClient(apiUrl!);
 
+/** Live event client: Socket.IO against the backend, or an in-process event bus in local mode. */
 export const realtime: RealtimeClient = apiUrl
   ? new SocketRealtime(new URL(apiUrl).origin)
   : new LocalRealtime();
 
-export const isLocalMode = api.mode === 'local';
+/** True when running on the on-device store (no backend configured). */
+export const isLocalMode =api.mode === 'local';

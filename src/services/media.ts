@@ -1,3 +1,5 @@
+// Photo handling: asks for camera/library permission, lets the user take or pick photos, shrinks them for
+// upload, and (in local mode) copies them somewhere permanent.
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
@@ -15,19 +17,26 @@ async function compress(uri: string, width?: number): Promise<string> {
     const saved = await rendered.saveAsync({ compress: 0.7, format: SaveFormat.JPEG, base64: Platform.OS === 'web' });
     return Platform.OS === 'web' && saved.base64 ? `data:image/jpeg;base64,${saved.base64}` : saved.uri;
   } catch {
+    // If resizing fails, send the original rather than losing the photo.
     return uri;
   }
 }
 
+/** Wraps a file URI as an upload-ready photo with a unique JPEG file name. */
 function toLocalPhoto(uri: string, i: number): LocalPhoto {
   return { uri, name: `photo-${Date.now()}-${i}.jpg`, type: 'image/jpeg' };
 }
 
+/** Where to get photos from: take a new one, or choose from the gallery. */
 export type PhotoSource = 'camera' | 'library';
 
+/** Thrown when the user refuses camera or photo-library access; its message can be shown as-is. */
 export class PermissionDeniedError extends Error {}
 
-/** Asked on first photo action, not at launch (§11). */
+/**
+ * Takes a photo or lets the user pick up to `limit` from the library, and returns them compressed.
+ * Returns [] if the user cancels. Permission is asked on first photo action, not at launch (§11).
+ */
 export async function pickPhotos(source: PhotoSource, limit: number): Promise<LocalPhoto[]> {
   if (limit <= 0) return [];
   if (source === 'camera') {
@@ -56,6 +65,7 @@ export async function pickPhotos(source: PhotoSource, limit: number): Promise<Lo
  * In remote mode photos are uploaded to object storage instead.
  */
 export function persistPhoto(photo: LocalPhoto): string {
+  // Web photos are already data URIs, which don't expire.
   if (Platform.OS === 'web') return photo.uri;
   try {
     const dir = new Directory(Paths.document, 'photos');
@@ -64,6 +74,7 @@ export function persistPhoto(photo: LocalPhoto): string {
     new File(photo.uri).copy(dest);
     return dest.uri;
   } catch {
+    // Copy failed: fall back to the original path, which still works until the cache is cleared.
     return photo.uri;
   }
 }

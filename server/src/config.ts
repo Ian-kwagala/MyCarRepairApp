@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 
-/** Environment configuration (secrets come from the environment, never the repo — §6 task 9). */
+// Environment configuration (secrets come from the environment, never the repo — §6 task 9).
+
+/** Reads a required variable, using `fallback` when given (development defaults); throws when neither is set. */
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
   if (!v) throw new Error(`Missing required environment variable ${name}`);
@@ -10,6 +12,7 @@ function required(name: string, fallback?: string): string {
 const isProd = process.env.NODE_ENV === 'production';
 const RENDER_SECRET_KEY = '/etc/secrets/firebase-key.json';
 
+/** Server settings, read once at start-up from environment variables. */
 export const config = {
   isProd,
   port: Number(process.env.PORT ?? 4000),

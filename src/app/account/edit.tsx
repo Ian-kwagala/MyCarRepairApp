@@ -7,10 +7,16 @@ import { Button, InlineNotice, Screen, Section, TextField } from '@/components';
 import { useSession, useUser } from '@/store/session';
 import { toast } from '@/store/toast';
 
-/** Edit profile — PATCH /me {fullName, phone, garageName?, garageLocation?, expertise?}. */
+// Screen for editing your own profile (both roles).
+
+/**
+ * Edit profile — PATCH /me {fullName, phone, garageName?, garageLocation?, expertise?}. Garage fields
+ * only appear for mechanics; email can't be changed here.
+ */
 export default function EditProfile() {
   const user = useUser();
   const setUser = useSession((s) => s.setUser);
+  // Form starts with the current profile values.
   const [f, setF] = useState({
     fullName: user?.fullName ?? '',
     phone: user?.phone ?? '',
@@ -24,6 +30,7 @@ export default function EditProfile() {
   if (!user) return null;
   const mechanic = user.role === 'mechanic';
 
+  // Saves the changes (garage fields only for mechanics) and updates the stored session.
   const save = async () => {
     setError(null);
     if (f.fullName.trim().length < 2) return setError('Enter your full name.');

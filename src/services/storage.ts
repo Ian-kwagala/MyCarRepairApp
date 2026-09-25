@@ -1,3 +1,5 @@
+// Device storage wrappers: `secure` for secrets like tokens, `kv` for everything else, and `Keys`, the
+// list of every storage key the app uses.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
@@ -10,6 +12,7 @@ import { Platform } from 'react-native';
 let webPersist = false;
 const webMemory = new Map<string, string>();
 
+/** Web only: whether `secure` saves to localStorage (true) or keeps values in memory (false). */
 export function setWebTokenPersistence(persist: boolean) {
   webPersist = persist;
 }
@@ -35,17 +38,22 @@ export const secure = {
       }
       try {
         globalThis.localStorage?.setItem(key, value);
-      } catch {}
+      } catch {
+        // Storage blocked or full (e.g. private browsing): the session just won't survive a reload.
+      }
       return;
     }
     await SecureStore.setItemAsync(key, value);
   },
   async remove(key: string): Promise<void> {
     if (Platform.OS === 'web') {
+      // Clear both places, whichever mode was in use.
       webMemory.delete(key);
       try {
         globalThis.localStorage?.removeItem(key);
-      } catch {}
+      } catch {
+        // Storage unavailable: nothing was saved there.
+      }
       return;
     }
     await SecureStore.deleteItemAsync(key);
@@ -54,6 +62,7 @@ export const secure = {
 
 /** Non-sensitive key/value storage (caches, preferences, notification history). */
 export const kv = {
+  /** Reads and JSON-parses a value; returns `fallback` if it's missing or unreadable. */
   async get<T>(key: string, fallback: T): Promise<T> {
     try {
       const raw = await AsyncStorage.getItem(key);
@@ -62,11 +71,13 @@ export const kv = {
       return fallback;
     }
   },
+  /** Saves a value as JSON. Failures are ignored: this data is only a cache or preference. */
   async set(key: string, value: unknown): Promise<void> {
     try {
       await AsyncStorage.setItem(key, JSON.stringify(value));
     } catch {}
   },
+  /** Deletes a value; failures are ignored. */
   async remove(key: string): Promise<void> {
     try {
       await AsyncStorage.removeItem(key);
@@ -74,6 +85,7 @@ export const kv = {
   },
 };
 
+/** Every storage key the app uses. Per-user keys are functions of the user ID; ".v1" marks the data format version. */
 export const Keys = {
   session: 'mcr.session.v1',
   prefs: 'mcr.prefs.v1',

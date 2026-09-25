@@ -5,7 +5,9 @@ import { Button, EmptyState, ErrorState, Screen, SkeletonList, Text, VehicleCard
 import { useVehicles } from '@/hooks/queries';
 import { MAX_PHOTOS } from '@/constants/config';
 
-/** O5 Virtual garage — cards with photos & service-due reminders. Opened from Home and Profile. */
+// Owner garage screen: the list of saved cars. Not a tab; it opens from Home ("See all") and Profile ("My garage").
+
+/** O5 Virtual garage — cards with photos & service-due reminders. */
 export default function Garage() {
   const vehicles = useVehicles();
   const list = vehicles.data ?? [];

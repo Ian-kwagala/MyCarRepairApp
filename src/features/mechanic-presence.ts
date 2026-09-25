@@ -10,6 +10,9 @@ import { getCurrentFix, watchPosition, type Fix } from '@/services/location';
 import { Keys, kv } from '@/services/storage';
 import { useUser } from '@/store/session';
 
+// Mechanic "presence": tracks and shares the mechanic's GPS position while they're available, and pops
+// up the full-screen incoming-SOS alert when a new emergency job arrives for them.
+
 interface PresenceState {
   coords: { lat: number; lng: number } | null;
   locationError: string | null;
@@ -17,6 +20,7 @@ interface PresenceState {
   setError: (e: string | null) => void;
 }
 
+/** The mechanic's latest GPS position and any location error, shared across screens. */
 export const usePresence = create<PresenceState>((set) => ({
   coords: null,
   locationError: null,
@@ -47,6 +51,7 @@ export async function shareLocationOnce() {
  */
 export function useLocationSharing(active: boolean) {
   const sub = useRef<Location.LocationSubscription | null>(null);
+  // When the position was last sent to the server.
   const last = useRef(0);
   useEffect(() => {
     if (!active) return;
@@ -54,12 +59,15 @@ export function useLocationSharing(active: boolean) {
     void (async () => {
       try {
         const s = await watchPosition((fix) => {
+          // Always update the on-screen position; throttle server updates to about one per interval
+          // (1 s leeway so a slightly early GPS callback isn't skipped).
           usePresence.getState().setCoords(fix);
           if (Date.now() - last.current >= LOCATION_INTERVAL_MS - 1000) {
             last.current = Date.now();
             void api.updateLocation(fix).catch(() => undefined);
           }
         }, LOCATION_INTERVAL_MS);
+        // If sharing was switched off while the watcher was starting, stop it straight away.
         if (cancelled) s.remove();
         else sub.current = s;
       } catch (e) {
@@ -74,7 +82,9 @@ export function useLocationSharing(active: boolean) {
   }, [active]);
 }
 
+// True while the incoming-SOS screen is showing, so a second alert doesn't stack on top of it.
 let incomingOpen = false;
+/** Called by the incoming-SOS screen when it opens and closes. */
 export const setIncomingOpen = (v: boolean) => {
   incomingOpen = v;
 };
@@ -88,10 +98,12 @@ export function useIncomingSosWatcher() {
   const coords = usePresence((s) => s.coords);
   const online = !!user?.isOnline;
   const sos = useMechanicJobs('sos', coords, { live: online });
+  // SOS job IDs already alerted, so each one only interrupts the mechanic once (saved across restarts).
   const seen = useRef<Set<number> | null>(null);
   const pathname = usePathname();
   const userId = user?.id;
 
+  // Load the saved "already alerted" list; alerts wait until it's loaded.
   useEffect(() => {
     if (!userId) return;
     void kv.get<number[]>(Keys.seenSos(userId), []).then((ids) => {
@@ -99,6 +111,7 @@ export function useIncomingSosWatcher() {
     });
   }, [userId]);
 
+  // Opens the full-screen alert for a job not alerted before; remembers the last 200 IDs.
   const alert = (jobId: number) => {
     if (!userId || !seen.current || seen.current.has(jobId) || incomingOpen) return;
     seen.current.add(jobId);
@@ -106,6 +119,7 @@ export function useIncomingSosWatcher() {
     router.push(`/mechanic/incoming/${jobId}`);
   };
 
+  // Instant path: react to the realtime event.
   useEffect(() => {
     if (!online) return;
     return realtime.on('new_job_pushed', (p) => {
@@ -114,6 +128,7 @@ export function useIncomingSosWatcher() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online, userId]);
 
+  // Fallback path: an unseen job in the polled SOS list (covers events missed while disconnected).
   useEffect(() => {
     if (!online || !sos.data || pathname.startsWith('/mechanic/incoming')) return;
     const next = sos.data.find((j) => !seen.current?.has(j.id));
