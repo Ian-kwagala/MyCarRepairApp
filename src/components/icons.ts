@@ -32,6 +32,7 @@ export { default as FileText } from 'lucide-react-native/icons/file-text';
 export { default as Fingerprint } from 'lucide-react-native/icons/fingerprint-pattern';
 export { default as Fuel } from 'lucide-react-native/icons/fuel';
 export { default as Globe } from 'lucide-react-native/icons/globe';
+export { default as Hourglass } from 'lucide-react-native/icons/hourglass';
 export { default as House } from 'lucide-react-native/icons/house';
 export { default as ImagePlus } from 'lucide-react-native/icons/image-plus';
 export { default as LifeBuoy } from 'lucide-react-native/icons/life-buoy';

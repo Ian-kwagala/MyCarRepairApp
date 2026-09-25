@@ -17,6 +17,8 @@ import type {
   Vehicle,
 } from '@/models';
 
+import { setServerWaking } from '@/store/server-status';
+
 import { ApiError, Errors } from '../errors';
 import type {
   ApiClient,
@@ -43,6 +45,12 @@ type Tokens = Pick<Session, 'accessToken' | 'refreshToken'>;
 type Body = Record<string, unknown> | FormData | undefined;
 
 const TIMEOUT_MS = 20_000;
+// The server sleeps after 15 min idle (free hosting) and takes up to a minute to wake. Until a response shows it
+// is awake, requests wait longer, and after a few seconds the app shows a "waking up" banner.
+const WAKE_TIMEOUT_MS = 75_000;
+const AWAKE_FOR_MS = 10 * 60_000;
+const SLOW_AFTER_MS = 4_000;
+let lastResponseAt = 0;
 
 async function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
   if (Platform.OS === 'web') {
@@ -112,15 +120,20 @@ export class RemoteApiClient implements ApiClient {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
     }
+    const cold = Date.now() - lastResponseAt > AWAKE_FOR_MS;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), cold ? WAKE_TIMEOUT_MS : TIMEOUT_MS);
+    const slow = cold ? setTimeout(() => setServerWaking(true), SLOW_AFTER_MS) : undefined;
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, { method, headers, body: payload, signal: ctrl.signal });
+      lastResponseAt = Date.now();
     } catch {
       throw Errors.network();
     } finally {
       clearTimeout(timer);
+      clearTimeout(slow);
+      setServerWaking(false);
     }
     if (res.status === 204) return undefined;
     const text = await res.text();

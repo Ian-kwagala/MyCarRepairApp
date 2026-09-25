@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 
-import { adminRouter } from './admin';
+import { adminRouter } from './admin/router';
 import { config } from './config';
 import { errorHandler } from './errors';
 import { serveMedia } from './media';

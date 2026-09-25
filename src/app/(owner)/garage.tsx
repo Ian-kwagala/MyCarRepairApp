@@ -5,15 +5,15 @@ import { Button, EmptyState, ErrorState, Screen, SkeletonList, Text, VehicleCard
 import { useVehicles } from '@/hooks/queries';
 import { MAX_PHOTOS } from '@/constants/config';
 
-/** O5 Virtual garage — cards with photos & service-due reminders. */
+/** O5 Virtual garage — cards with photos & service-due reminders. Opened from Home and Profile. */
 export default function Garage() {
   const vehicles = useVehicles();
   const list = vehicles.data ?? [];
   return (
     <Screen
+      back
       title="My Garage"
       eyebrow={list.length ? `${list.length} vehicle${list.length > 1 ? 's' : ''}` : undefined}
-      inTabs
       refreshing={vehicles.isRefetching}
       onRefresh={() => vehicles.refetch()}
       right={list.length ? <Button title="Add" icon={Plus} size="sm" onPress={() => router.push('/vehicle/add')} /> : null}>

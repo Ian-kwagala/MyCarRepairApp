@@ -67,8 +67,11 @@ additive `device_tokens`, `job_extras`, `media`, `refresh_tokens` and `password_
   instead.
 - **Photos:** type-sniffed uploads, 5 MB max, served from `/media/<random key>`. **Receipts:** PDFs
   (PDFKit) behind signed 15-minute links.
-- **`/admin`:** a password-protected page (`ADMIN_PASSWORD`) to approve or suspend mechanics, and to read
-  password-reset codes to callers after verifying them. There's no SMS provider yet.
+- **`/admin` console** (sign in with any username and `ADMIN_PASSWORD`): live overview (open SOS, jobs in
+  progress, mechanics online, job value, jobs per day), mechanic approvals, jobs with filters and a full job
+  view (job card, parts quotes, bill, review), owners and mechanics with search and suspend/reactivate,
+  password-reset codes to read to verified callers (there's no SMS provider yet), and settings (support
+  phone, minimum app version, maintenance mode). Server-rendered, no external assets.
 
 Run it locally:
 
@@ -79,8 +82,13 @@ cd server && npm install && DATABASE_URL=postgres://… npm start
 ```
 
 **Deploy** (one-time, about 5 minutes): on render.com choose **New → Blueprint** and pick this repository.
-`render.yaml` creates the API and the database. You'll get a URL like `https://mycarrepair-api.onrender.com`.
-Any Node host works too: `server/Dockerfile` builds from the repo root.
+`render.yaml` creates the API and the database. The live API is `https://mycarrepair-api.onrender.com`
+(admin console at `/admin`); Render redeploys it on every push to `main`. Any Node host works too:
+`server/Dockerfile` builds from the repo root.
+
+On Render's free plan the API sleeps after 15 minutes without traffic and takes up to a minute to wake. The
+apps allow for this: the first request after a quiet spell waits up to 75 seconds and shows "Connecting to
+MyCarRepair". An online mechanic's location updates keep the API awake. Move to a paid plan for real users.
 
 **Point the apps at it:** set `EXPO_PUBLIC_API_URL` when you start or build them:
 
@@ -104,7 +112,7 @@ runs them on every push.
 | O1 | Owner home — 1-tap SOS, services, live active-repair card, garage | `src/app/(owner)/(tabs)/index.tsx` |
 | O2 · O3 · O4 | SOS issue picker (GPS lock) → broadcasting radar → mechanic found (live map, ETA, call) | `src/app/(owner)/sos/*` |
 | X1 | Offline SOS queue, auto-send when signal returns, SMS / call fallback | `src/app/(owner)/sos/offline.tsx` |
-| O5 · O6 | Garage (service-due reminder) · 3-step add/edit vehicle wizard, ≤ 5 compressed photos | `src/app/(owner)/(tabs)/garage.tsx`, `vehicle/*` |
+| O5 · O6 | Garage (service-due reminder; opened from Home and Profile) · 3-step add/edit vehicle wizard, ≤ 5 compressed photos | `src/app/(owner)/garage.tsx`, `vehicle/*` |
 | O7 · O8 | Book service (date strip, notes) · Diagnostics (symptoms + photo) | `src/app/(owner)/book.tsx`, `diagnostics.tsx` |
 | O9 · O10 · O11 | Live tracker (5-stage timeline, checklist) · Parts approval sheet (new-total preview) · Receipt PDF + rating | `src/app/(owner)/job/*`, `quote/[id].tsx` |
 | O12 · O13 | Activity (active / history by date, cached offline) · Notification centre | `(tabs)/activity.tsx`, `src/app/notifications.tsx` |
@@ -144,14 +152,12 @@ src/
 
 ## What I need from you (open questions)
 
-1. **Deploy the backend** (see **Backend**): create the Render Blueprint, or give me access to another
-   host. The APKs get the API URL at build time.
-2. **Web platform repository link:** if the web platform's PostgreSQL database should be shared too, point
+1. **Web platform repository link:** if the web platform's PostgreSQL database should be shared too, point
    `DATABASE_URL` at it. The schema matches, and the extra tables are additive. The `/api/v1` routes could
    also move into the web backend's Express app.
-3. **Password resets:** codes are read out by support from `/admin` for now. An SMS provider (Africa's
+2. **Password resets:** codes are read out by support from `/admin` for now. An SMS provider (Africa's
    Talking, blueprint Phase 2) would send them automatically.
-4. For release builds: a **Google Maps API key** (`MAPS_KEY`), an **EAS project** (for push notifications
-   when the app is closed), the **support / emergency phone number** (placeholder `+256700000000` in
-   `src/constants/config.ts`, or the `support_phone` row in `system_config`), and a **Play Store signing
+3. For release builds: a **Google Maps API key** (`MAPS_KEY`), an **EAS project** (for push notifications
+   when the app is closed), the **support / emergency phone number** (placeholder `+256700000000`; set it in
+   `/admin` → Settings), and a **Play Store signing
    key**.

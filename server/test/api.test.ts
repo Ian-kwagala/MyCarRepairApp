@@ -88,6 +88,14 @@ async function eventually(fn: () => boolean, what: string) {
 
 const KAMPALA = { lat: 0.3136, lng: 32.5811 };
 
+async function ownerWithCar(email: string) {
+  const o = await register('owner', email);
+  const form = new FormData();
+  for (const [k, v] of Object.entries({ make: 'Subaru', model: 'Forester', year: '2010', plateNumber: 'UAZ 901K', fuelType: 'Petrol', transmission: 'Automatic' })) form.append(k, v);
+  const v = await call('POST', '/vehicles', { token: o.accessToken, form });
+  return { ...o, vehicleId: v.json.id as number };
+}
+
 before(async () => {
   await pool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;');
   await migrate();
@@ -181,14 +189,6 @@ describe('vehicles', () => {
 });
 
 describe('jobs', () => {
-  async function ownerWithCar(email: string) {
-    const o = await register('owner', email);
-    const form = new FormData();
-    for (const [k, v] of Object.entries({ make: 'Subaru', model: 'Forester', year: '2010', plateNumber: 'UAZ 901K', fuelType: 'Petrol', transmission: 'Automatic' })) form.append(k, v);
-    const v = await call('POST', '/vehicles', { token: o.accessToken, form });
-    return { ...o, vehicleId: v.json.id as number };
-  }
-
   test('SOS → nearest mechanic only → first-come claim → arrival → quote → finish lock → receipt → one review', async () => {
     const near = await mechanic('near@x.ug', 0.33, 32.57); // ~2.2 km
     const near2 = await mechanic('near2@x.ug', 0.32, 32.58); // ~0.7 km
@@ -315,5 +315,75 @@ describe('jobs', () => {
     await wait(300);
     assert.equal(bLive.events.length, 0);
     assert.equal((await call('GET', '/jobs?scope=active', { token: b.accessToken })).json.length, 0);
+  });
+});
+
+describe('admin console', () => {
+  const basic = (pass = 'admin-test') => ({ Authorization: `Basic ${Buffer.from(`staff:${pass}`).toString('base64')}` });
+  const get = async (path: string, headers: Record<string, string> = basic()) => {
+    const res = await fetch(`${base}/admin${path}`, { headers });
+    return { status: res.status, html: await res.text() };
+  };
+  const post = (path: string, form: Record<string, string>, origin = base) =>
+    fetch(`${base}/admin${path}`, { method: 'POST', redirect: 'manual', headers: { ...basic(), Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form) });
+
+  test('needs the admin password and blocks cross-site posts', async () => {
+    assert.equal((await get('/', {})).status, 401);
+    assert.equal((await get('/', basic('wrong'))).status, 401);
+    assert.equal((await post('/settings/maintenance', { mode: 'on' }, 'https://evil.example')).status, 403);
+  });
+
+  test('every page renders, with user data escaped', async () => {
+    const owner = await ownerWithCar('adm-owner@x.ug');
+    await call('PATCH', '/me', { token: owner.accessToken, body: { fullName: '<script>alert(1)</script>' } });
+    const m = await mechanic('adm-mech@x.ug', 0.3136, 32.5811);
+    const sos = await call('POST', '/sos', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, issue: 'Flat Tire', ...KAMPALA } });
+    assert.equal((await call('POST', `/mechanic/jobs/${sos.json.jobId}/accept`, { token: m.accessToken })).status, 200);
+    const pending = await register('mechanic', 'adm-pending@x.ug', { garageName: 'Pending Garage', garageLocation: 'Ntinda' });
+
+    const pages: [string, string][] = [
+      ['/', 'Live jobs'],
+      ['/approvals', 'Pending Garage'],
+      ['/jobs', `#${sos.json.jobId}`],
+      ['/jobs?status=active&type=sos&q=UAZ', `#${sos.json.jobId}`],
+      [`/jobs/${sos.json.jobId}`, 'Job card'],
+      ['/owners?q=adm-owner', 'adm-owner@x.ug'],
+      ['/mechanics?status=online', 'adm-mech'],
+      [`/users/${owner.user.id}`, 'Garage (1)'],
+      [`/users/${m.user.id}`, 'Latest reviews'],
+      ['/resets', 'Active codes'],
+      ['/settings', 'Maintenance mode'],
+    ];
+    for (const [path, text] of pages) {
+      const r = await get(path);
+      assert.equal(r.status, 200, path);
+      assert.ok(r.html.includes(text), `${path} should show "${text}"`);
+      assert.ok(!r.html.includes('<script>alert(1)'), `${path} escapes user data`);
+    }
+    assert.ok((await get('/owners')).html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+    assert.equal((await get('/jobs/999999')).status, 404);
+    assert.match((await get('/assets/admin.js')).html, /data-confirm|dataset\.confirm/);
+
+    // Approve from the approvals page returns there; an off-site "back" falls back to /admin.
+    const ok = await post(`/users/${pending.user.id}/approve`, { back: '/admin/approvals' });
+    assert.equal(ok.status, 303);
+    assert.equal(ok.headers.get('location'), '/admin/approvals?notice=approved');
+    const evil = await post(`/users/${pending.user.id}/suspend`, { back: '//evil.example/admin' });
+    assert.equal(evil.headers.get('location'), '/admin?notice=suspended');
+  });
+
+  test('settings reach the apps through /config', async () => {
+    assert.equal((await post('/settings', { support_phone: 'call me', min_app_version: '1.0.0' })).headers.get('location'), '/admin/settings?error=phone');
+    assert.equal((await post('/settings', { support_phone: '+256 772 123456', min_app_version: '1.2.0' })).status, 303);
+    assert.equal((await post('/settings/maintenance', { mode: 'on' })).status, 303);
+    let cfg = (await call('GET', '/config')).json;
+    assert.equal(cfg.supportPhone, '+256 772 123456');
+    assert.equal(cfg.minAppVersion, '1.2.0');
+    assert.equal(cfg.maintenance, true);
+    assert.ok((await get('/')).html.includes('Maintenance mode is on'));
+    await post('/settings/maintenance', { mode: 'off' });
+    await post('/settings', { support_phone: '+256700000000', min_app_version: '1.0.0' });
+    cfg = (await call('GET', '/config')).json;
+    assert.equal(cfg.maintenance, false);
   });
 });
