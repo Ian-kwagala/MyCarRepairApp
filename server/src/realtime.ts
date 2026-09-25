@@ -77,7 +77,9 @@ function pushText(event: RealtimeEvent, p: RealtimePayload): { title: string; bo
 function deepLink(event: RealtimeEvent, p: RealtimePayload): string | undefined {
   if (event === 'mechanic_approved') return '/mechanic';
   if (!p.jobId) return undefined;
-  if (event === 'new_job_pushed' || event === 'quote_updated') return `/mechanic/job/${p.jobId}`;
+  // An SOS opens the full-screen accept/decline screen; a booking opens the job.
+  if (event === 'new_job_pushed') return p.sos ? `/mechanic/incoming/${p.jobId}` : `/mechanic/job/${p.jobId}`;
+  if (event === 'quote_updated') return `/mechanic/job/${p.jobId}`;
   if (event === 'new_quote_alert' && p.quoteId) return `/quote/${p.quoteId}`;
   if (event === 'job_finished') return `/job/${p.jobId}/receipt`;
   return `/job/${p.jobId}`;

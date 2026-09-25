@@ -63,8 +63,21 @@ additive `device_tokens`, `job_extras`, `media`, `refresh_tokens` and `password_
   FR-03 nearest-5-within-10 km dispatch (widening to 20 km after 60 s), the finish lock (422), parts
   approval, one review per job, SOS cancel → `cancelled`, and the SOS rate limit.
 - **Real time:** Socket.io with the JWT in the handshake. The server joins each user to their own
-  `user_<id>` room, so nobody receives anyone else's events. Users who aren't connected get an Expo push
-  instead.
+  `user_<id>` room, so nobody receives anyone else's events. Users who aren't connected (app in the
+  background or closed) get a push notification instead: an SOS to a mechanic arrives on the high-priority
+  `sos` channel and opens the accept screen when tapped.
+- **Push (Firebase Cloud Messaging):** the server sends directly through FCM HTTP v1, no Expo account needed.
+  Two pieces turn it on:
+  1. `google-services.json` in the repo root (Firebase console → project settings → your apps; one file
+     holds both `ug.mycarrepair.app` and `ug.mycarrepair.mechanic`). Builds then include Firebase and
+     register each phone's FCM token.
+  2. The Firebase service-account key on the server (Firebase console → project settings → Service accounts
+     → Generate new private key). On Render: Environment → Add Secret File named `firebase-key.json` with the
+     file's contents (or set `FCM_SERVICE_ACCOUNT` to the JSON, its base64, or a file path). It is a secret:
+     never commit it.
+
+  `/admin` → Settings shows whether push is on, and each account page has **Send test notification**.
+  Expo push tokens (EAS builds) still work too.
 - **Photos:** type-sniffed uploads, 5 MB max, served from `/media/<random key>`. **Receipts:** PDFs
   (PDFKit) behind signed 15-minute links.
 - **`/admin` console** (sign in with any username and `ADMIN_PASSWORD`): live overview (open SOS, jobs in
@@ -157,7 +170,6 @@ src/
    also move into the web backend's Express app.
 2. **Password resets:** codes are read out by support from `/admin` for now. An SMS provider (Africa's
    Talking, blueprint Phase 2) would send them automatically.
-3. For release builds: a **Google Maps API key** (`MAPS_KEY`), an **EAS project** (for push notifications
-   when the app is closed), the **support / emergency phone number** (placeholder `+256700000000`; set it in
+3. For release builds: a **Google Maps API key** (`MAPS_KEY`), the **support / emergency phone number** (placeholder `+256700000000`; set it in
    `/admin` → Settings), and a **Play Store signing
    key**.

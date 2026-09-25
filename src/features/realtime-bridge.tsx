@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { router, type Href } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
 import { api, isLocalMode, realtime } from '@/api';
@@ -85,15 +85,17 @@ export function RealtimeBridge() {
     });
   }, [userId, role]);
 
-  // Push / local notification tap → deep link.
+  // Push / local notification tap → deep link, including the tap that launched the app from closed.
+  const lastTap = Notifications.useLastNotificationResponse();
+  const handledTap = useRef<string | null>(null);
   useEffect(() => {
-    if (Platform.OS === 'web' || !userId) return;
-    const sub = Notifications.addNotificationResponseReceivedListener((res) => {
-      const url = res.notification.request.content.data?.url;
-      if (typeof url === 'string' && url) router.push(url as Href);
-    });
-    return () => sub.remove();
-  }, [userId]);
+    if (Platform.OS === 'web' || !userId || !lastTap || lastTap.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+    const id = lastTap.notification.request.identifier;
+    if (handledTap.current === id) return;
+    handledTap.current = id;
+    const url = lastTap.notification.request.content.data?.url;
+    if (typeof url === 'string' && url.startsWith('/')) router.push(url as Href);
+  }, [lastTap, userId]);
 
   return null;
 }

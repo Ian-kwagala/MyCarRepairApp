@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
-import { registerForPush, requestNotificationPermission } from '@/services/notifications';
+import { api } from '@/api';
+import { onPushTokenChange, registerForPush, requestNotificationPermission } from '@/services/notifications';
 import { kv } from '@/services/storage';
 import { usePrefs } from '@/store/prefs';
 import { useUser } from '@/store/session';
@@ -38,4 +39,14 @@ export function useNotificationSetup() {
       cancelled = true;
     };
   }, [userId, role]);
+
+  useEffect(() => {
+    if (!userId || Platform.OS === 'web') return;
+    return onPushTokenChange((token) => {
+      void api
+        .registerPushToken(token, Platform.OS)
+        .then(() => usePrefs.getState().update({ pushToken: token }))
+        .catch(() => undefined);
+    });
+  }, [userId]);
 }

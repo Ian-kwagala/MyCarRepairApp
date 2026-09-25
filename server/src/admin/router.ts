@@ -9,7 +9,9 @@ import { parseFeedback } from '@/utils/jobs';
 
 import { config } from '../config';
 import { one, query, tx } from '../db';
+import { fcmEnabled } from '../fcm';
 import { serviceFee } from '../jobs';
+import { sendPush } from '../push';
 import { emitTo } from '../realtime';
 import type { ChecklistRow, JobRow, QuoteRow, ReviewRow, UserRow, VehicleRow } from '../types';
 import {
@@ -50,6 +52,22 @@ const sha = (s: string) => createHash('sha256').update(s).digest();
 // Failed sign-ins only: stops password guessing without getting in the way of normal use.
 adminRouter.use(rateLimit({ windowMs: 15 * 60_000, limit: 30, skipSuccessfulRequests: true, standardHeaders: 'draft-8', legacyHeaders: false }));
 
+/** True when a POST was made by a page of this site. */
+function sameOrigin(req: Request) {
+  // Sec-Fetch-Site is set by the browser itself and can't be forged by another site's page.
+  const site = req.get('sec-fetch-site');
+  if (site) return site === 'same-origin';
+  for (const value of [req.get('origin'), req.get('referer')]) {
+    if (!value || value === 'null') continue;
+    try {
+      return new URL(value).host === req.get('host');
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 const auth: RequestHandler = (req, res, next) => {
   if (!config.adminPassword) {
     res.status(404).send('Admin page is disabled. Set ADMIN_PASSWORD to enable it.');
@@ -64,13 +82,13 @@ const auth: RequestHandler = (req, res, next) => {
     return;
   }
   // CSRF: browsers resend Basic credentials cross-site, so POSTs must come from this origin.
-  if (req.method === 'POST') {
-    const origin = req.get('origin') ?? req.get('referer') ?? '';
-    if (!origin.startsWith(`${req.protocol}://${req.get('host')}`)) {
-      res.status(403).send('Cross-site request blocked.');
-      return;
-    }
+  if (req.method === 'POST' && !sameOrigin(req)) {
+    res.status(403).send('Cross-site request blocked.');
+    return;
   }
+  // helmet's default "no-referrer" makes browsers send "Origin: null" on form posts, which would make every
+  // button here look cross-site. "same-origin" keeps the real origin on our own posts and nothing leaves the site.
+  res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Robots-Tag', 'noindex');
   next();
@@ -471,10 +489,14 @@ adminRouter.get('/users/:id', async (req, res) => {
   const mech = u.role === 'mechanic';
   const listHref = mech ? '/admin/mechanics' : '/admin/owners';
   const jobs = await query<JobListRow>(`${JOB_LIST_SELECT} WHERE j.${mech ? 'mechanic_id' : 'owner_id'} = $1 ORDER BY j.created_at DESC LIMIT 50`, [id]);
+  const devices = (await one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM device_tokens WHERE user_id = $1`, [id]))!.n;
+  const pushRow = `<dt>Notifications</dt><dd>${
+    devices ? `${devices} phone${devices === 1 ? '' : 's'} registered` : '<span class="muted">No phone registered yet (alerts turned off, or the app has not been opened since push was set up)</span>'
+  }${devices && fcmEnabled() ? `<div style="margin-top:8px">${action(`/admin/users/${u.id}/test-push`, 'Send test notification', `/admin/users/${u.id}`, 'ghost')}</div>` : ''}</dd>`;
   const profile = `<section class="card"><div class="card-h"><h2>Account</h2>${userStatusPill(u.status)}</div><div class="card-b"><dl class="kv">
 <dt>Name</dt><dd>${esc(u.full_name)}</dd><dt>Phone</dt><dd>${u.phone ? `<a href="tel:${esc(u.phone)}">${esc(u.phone)}</a>` : '—'}</dd><dt>Email</dt><dd><a href="mailto:${esc(u.email)}">${esc(u.email)}</a></dd>
 <dt>Joined</dt><dd>${esc(fmtDateTime(u.created_at))}</dd>${mech ? `<dt>Garage</dt><dd>${esc(u.garage_name || '—')}</dd><dt>Garage location</dt><dd>${esc(u.garage_location || '—')}</dd><dt>Expertise</dt><dd>${esc(u.expertise || '—')}</dd><dt>Availability</dt><dd><span class="dot${u.is_online ? ' on' : ''}"></span>${u.is_online ? 'Online now' : 'Offline'}</dd>` : ''}
-<dt>Last location</dt><dd>${mapsLink(u.location_lat, u.location_lng)}</dd></dl></div></section>`;
+<dt>Last location</dt><dd>${mapsLink(u.location_lat, u.location_lng)}</dd>${pushRow}</dl></div></section>`;
 
   let side = '';
   if (mech) {
@@ -538,6 +560,13 @@ adminRouter.post('/users/:id/approve', async (req, res) => {
   res.redirect(303, backTo(req, before?.status === 'pending' ? 'approved' : 'reactivated'));
 });
 
+adminRouter.post('/users/:id/test-push', async (req, res) => {
+  const id = Number(req.params.id);
+  const u = await one<UserRow>(`SELECT * FROM users WHERE id = $1 AND role <> 'admin'`, [id]);
+  if (u) await sendPush([u.id], 'Test from MyCarRepair', 'Notifications are working on this phone.', { event: 'test', url: u.role === 'mechanic' ? '/mechanic' : '/' }, 'jobs');
+  res.redirect(303, backTo(req, 'push-sent'));
+});
+
 adminRouter.post('/users/:id/suspend', async (req, res) => {
   const id = Number(req.params.id);
   const before = await one<UserRow>(`SELECT * FROM users WHERE id = $1 AND role <> 'admin'`, [id]);
@@ -588,6 +617,7 @@ adminRouter.get('/settings', async (req, res) => {
   const { counts, maintenance } = await chrome();
   const s = await settingsMap();
   const fee = await serviceFee();
+  const devices = (await one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM device_tokens`))!.n;
   const error = str(req.query.error);
   const body = `${error ? `<div class="notice warn" role="alert">${icon('triangle-alert')}${esc(error === 'phone' ? 'Enter the support number with its country code, for example +256 700 123456.' : 'Enter the version as three numbers, for example 1.0.0.')}</div>` : ''}
 <div class="grid2"><div>
@@ -603,6 +633,11 @@ adminRouter.get('/settings', async (req, res) => {
 <p class="muted" style="margin:0 0 12px">While it is on, both apps show a "We'll be right back" screen and nobody can send SOS requests. Use it only during planned work on the system.</p>
 <form method="post" action="/admin/settings/maintenance" data-confirm="${maintenance ? 'Turn maintenance mode off? The apps will work normally again.' : 'Turn maintenance mode on? Nobody can use the apps or send an SOS until you turn it off.'}">
 <input type="hidden" name="mode" value="${maintenance ? 'off' : 'on'}"><button class="btn ${maintenance ? 'success' : 'danger'}">${maintenance ? 'Turn maintenance mode off' : 'Turn maintenance mode on'}</button></form></div></section>
+<section class="card"><div class="card-h"><h2>Push notifications</h2>${fcmEnabled() ? pill('On', 'success') : pill('Off', 'warning')}</div><div class="card-b"><p class="muted" style="margin:0">${
+    fcmEnabled()
+      ? `Phones get SOS alerts and job updates even when the app is closed. ${num(devices)} phone${devices === 1 ? '' : 's'} registered. Open an account to send it a test notification.`
+      : 'Alerts only reach phones while the app is open. To turn them on, add the Firebase key on Render: mycarrepair-api → Environment → <b>Add Secret File</b>, filename <b>firebase-key.json</b>, paste the key file\'s contents.'
+  }</p></div></section>
 <section class="card"><div class="card-b"><h2>Signing in</h2><p class="muted" style="margin:6px 0 0">This console uses the <b>ADMIN_PASSWORD</b> set on Render (mycarrepair-api → Environment). Change it there to change the password; the server restarts with the new one.</p></div></section>
 </div></div>`;
   res.send(page({ title: 'Settings', active: '/admin/settings', counts, maintenance, notice: str(req.query.notice), body, subtitle: 'Values the apps read when they start.' }));

@@ -1,5 +1,9 @@
 import type { ExpoConfig } from 'expo/config';
 
+// app.config.ts runs in Node; the app's tsconfig has no Node types, so type the one call used here.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { existsSync } = require('fs') as { existsSync: (path: string) => boolean };
+
 /**
  * One codebase, two store apps (blueprint §2.2 notes the app "could split later"):
  *   APP_VARIANT=owner     → "MyCarRepair"   (ug.mycarrepair.app)      car owners only
@@ -38,6 +42,12 @@ const VARIANTS = {
 } as const;
 
 const v = VARIANTS[VARIANT];
+
+// Firebase (push notifications while the app is closed). google-services.json comes from the Firebase console and
+// holds both Android apps (ug.mycarrepair.app and ug.mycarrepair.mechanic); without it, alerts only arrive while
+// the app is open.
+const GOOGLE_SERVICES = './google-services.json';
+const fcm = existsSync(GOOGLE_SERVICES);
 const img = (file: string) => `./assets/images/${v.assets}/${file}`;
 
 // Blueprint Appendix A.4 — app.config.ts essentials.
@@ -77,6 +87,7 @@ const config: ExpoConfig = {
       ...(VARIANT === 'owner' ? [] : ['USE_FULL_SCREEN_INTENT']),
     ],
     config: process.env.MAPS_KEY ? { googleMaps: { apiKey: process.env.MAPS_KEY } } : undefined,
+    ...(fcm ? { googleServicesFile: GOOGLE_SERVICES } : {}),
     predictiveBackGestureEnabled: false,
   },
   web: {
@@ -106,7 +117,8 @@ const config: ExpoConfig = {
       },
     ],
     ['expo-image-picker', { cameraPermission: 'The camera is used to photograph cars and parts as evidence.' }],
-    ['expo-notifications', { color: '#F97316' }],
+    // Status-bar icon: the white silhouette from the adaptive icon (Android shows small icons as a mask).
+    ['expo-notifications', { color: '#F97316', icon: img('adaptive-monochrome.png') }],
     ['expo-local-authentication', { faceIDPermission: 'Unlock the app quickly and securely.' }],
     // Smaller APKs for sideloading and low-data installs (§11.1, NFR10 ≤ 35 MB): compressed native libraries,
     // and R8 shrinking of unused Java/Kotlin code and resources. Obfuscation stays off (-dontobfuscate) so
@@ -133,6 +145,7 @@ const config: ExpoConfig = {
     ...(VARIANT === 'all' ? {} : { appRole: VARIANT }),
     // Native Google Maps only when a key is baked in; otherwise map cards fall back to links (map-card.tsx).
     mapsEnabled: !!process.env.MAPS_KEY,
+    fcm,
     ...(process.env.EXPO_PUBLIC_API_URL ? { apiUrl: process.env.EXPO_PUBLIC_API_URL } : {}),
   },
 };

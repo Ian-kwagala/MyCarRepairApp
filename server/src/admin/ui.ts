@@ -100,6 +100,7 @@ export const NOTICES: Record<string, string> = {
   settings: 'Settings saved. Apps pick them up the next time they open.',
   'maintenance-on': 'Maintenance mode is on: the apps now show a maintenance screen.',
   'maintenance-off': 'Maintenance mode is off: the apps work normally again.',
+  'push-sent': 'Test notification sent. It should appear on their phone within a few seconds.',
 };
 
 export interface NavCounts {

@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+
 /** Environment configuration (secrets come from the environment, never the repo — §6 task 9). */
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
@@ -6,6 +8,7 @@ function required(name: string, fallback?: string): string {
 }
 
 const isProd = process.env.NODE_ENV === 'production';
+const RENDER_SECRET_KEY = '/etc/secrets/firebase-key.json';
 
 export const config = {
   isProd,
@@ -25,4 +28,11 @@ export const config = {
   /** Login attempts per minute per IP (blueprint §13.1 says 5). */
   loginRateLimit: Number(process.env.LOGIN_RATE_LIMIT ?? 5),
   maxUploadBytes: 5 * 1024 * 1024,
+  /**
+   * Firebase service-account key for push notifications (FCM HTTP v1): the key file's JSON, the same JSON
+   * base64-encoded, or a path to the file. Without the variable, a Render secret file named firebase-key.json
+   * is used when present. Push stays off otherwise.
+   */
+  fcmServiceAccount: process.env.FCM_SERVICE_ACCOUNT?.trim() || (existsSync(RENDER_SECRET_KEY) ? RENDER_SECRET_KEY : null),
+  fcmApiBase: (process.env.FCM_API_BASE ?? 'https://fcm.googleapis.com').replace(/\/+$/, ''),
 };

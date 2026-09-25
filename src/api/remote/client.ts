@@ -2,6 +2,7 @@
  * RemoteApiClient — the §7 contract over HTTPS: JSON, `Authorization: Bearer <accessToken>`,
  * refresh on 401, uniform error envelope `{ error: { code, message } }`, multipart for photos.
  */
+import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import type {
@@ -52,14 +53,21 @@ const AWAKE_FOR_MS = 10 * 60_000;
 const SLOW_AFTER_MS = 4_000;
 let lastResponseAt = 0;
 
+/** Connection failures: expo/fetch throws FetchError ("fetch failed: …"), browsers and RN fetch a TypeError. */
+function isTransportError(e: unknown) {
+  return e instanceof TypeError || (e instanceof Error && (e.name === 'AbortError' || e.message.startsWith('fetch failed')));
+}
+
 async function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
   if (Platform.OS === 'web') {
     // Browsers need a real Blob (the picker gives data: or blob: URIs).
     form.append(field, await (await fetch(p.uri)).blob(), p.name);
     return;
   }
-  // React Native FormData file part.
-  form.append(field, { uri: p.uri, name: p.name, type: p.type } as unknown as Blob);
+  // The global fetch is expo/fetch, which rejects React Native's { uri, name, type } parts before sending
+  // (the app then reported "no connection"). An expo-file-system File implements Blob; its bytes are read
+  // from disk when the request is built.
+  form.append(field, new File(p.uri) as unknown as Blob);
 }
 
 async function toForm(fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>) {
@@ -128,8 +136,11 @@ export class RemoteApiClient implements ApiClient {
     try {
       res = await fetch(`${this.baseUrl}${path}`, { method, headers, body: payload, signal: ctrl.signal });
       lastResponseAt = Date.now();
-    } catch {
-      throw Errors.network();
+    } catch (e) {
+      // Only a failed or timed-out connection means "offline"; anything else (a photo that can't be read, say)
+      // is shown as it is instead of blaming the user's signal.
+      if (isTransportError(e)) throw Errors.network();
+      throw new ApiError('CLIENT_ERROR', `Couldn't send this: ${e instanceof Error ? e.message : String(e)}`, 0);
     } finally {
       clearTimeout(timer);
       clearTimeout(slow);

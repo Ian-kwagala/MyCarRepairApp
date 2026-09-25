@@ -49,18 +49,40 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return res.granted;
 }
 
-/** Registers the Expo push token with the backend (POST /me/push-token). Needs a dev/production build. */
+/**
+ * The token the server pushes to: the native FCM token on Android builds that include google-services.json (the
+ * server sends through Firebase directly), otherwise an Expo push token when the build has an EAS project.
+ */
+async function pushToken(): Promise<string | null> {
+  if (Platform.OS === 'android' && Constants.expoConfig?.extra?.fcm) {
+    const { data } = await Notifications.getDevicePushTokenAsync();
+    return typeof data === 'string' ? data : null;
+  }
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+  if (!projectId) return null;
+  return (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+}
+
+/** Registers this phone's push token with the backend (POST /me/push-token). Needs a dev/production build. */
 export async function registerForPush(): Promise<string | null> {
   if (Platform.OS === 'web' || !Device.isDevice || api.mode !== 'remote') return null;
   try {
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-    if (!projectId) return null;
-    const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
-    await api.registerPushToken(data, Platform.OS);
-    return data;
+    const token = await pushToken();
+    if (!token) return null;
+    await api.registerPushToken(token, Platform.OS);
+    return token;
   } catch {
     return null;
   }
+}
+
+/** Firebase rotates tokens now and then; re-register so alerts keep arriving. */
+export function onPushTokenChange(listener: (token: string) => void) {
+  if (Platform.OS !== 'android' || !Constants.expoConfig?.extra?.fcm) return () => {};
+  const sub = Notifications.addPushTokenListener(({ data }) => {
+    if (typeof data === 'string') listener(data);
+  });
+  return () => sub.remove();
 }
 
 /** Shows a system notification when the app is in the background (socket still alive). */

@@ -13,6 +13,38 @@ process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres
 process.env.ADMIN_PASSWORD = 'admin-test';
 process.env.LOGIN_RATE_LIMIT = '1000';
 
+// Stand-in for Google's OAuth and FCM endpoints, so push runs end to end without a Firebase project.
+const { generateKeyPairSync, createVerify } = await import('node:crypto');
+const http = await import('node:http');
+const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const fcmCalls: { path: string; auth: string; message: Json }[] = [];
+const fcmDead = new Set<string>();
+const google = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', (c) => (raw += c));
+  req.on('end', () => {
+    if (req.url === '/token') {
+      const [h, p, sig] = (new URLSearchParams(raw).get('assertion') ?? '').split('.');
+      const ok = !!sig && createVerify('RSA-SHA256').update(`${h}.${p}`).verify(publicKey, Buffer.from(sig, 'base64url'));
+      res.writeHead(ok ? 200 : 401, { 'Content-Type': 'application/json' }).end(JSON.stringify({ access_token: 'fake-access', expires_in: 3600 }));
+      return;
+    }
+    const { message } = JSON.parse(raw);
+    fcmCalls.push({ path: req.url ?? '', auth: req.headers.authorization ?? '', message });
+    if (fcmDead.has(message.token)) res.writeHead(404).end(JSON.stringify({ error: { status: 'NOT_FOUND', details: [{ errorCode: 'UNREGISTERED' }] } }));
+    else res.writeHead(200).end('{}');
+  });
+});
+await new Promise<void>((r) => google.listen(0, r));
+const googleBase = `http://127.0.0.1:${(google.address() as AddressInfo).port}`;
+process.env.FCM_API_BASE = googleBase;
+process.env.FCM_SERVICE_ACCOUNT = JSON.stringify({
+  project_id: 'mcr-test',
+  client_email: 'push@mcr-test.iam.gserviceaccount.com',
+  private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }),
+  token_uri: `${googleBase}/token`,
+});
+
 const { createServer } = await import('node:http');
 const { createApp } = await import('../src/app');
 const { migrate, pool } = await import('../src/db');
@@ -108,6 +140,7 @@ after(async () => {
   sockets.forEach((s) => s.disconnect());
   closeRealtime();
   await new Promise((r) => server.close(r));
+  await new Promise((r) => google.close(r));
   await pool.end();
 });
 
@@ -331,6 +364,13 @@ describe('admin console', () => {
     assert.equal((await get('/', {})).status, 401);
     assert.equal((await get('/', basic('wrong'))).status, 401);
     assert.equal((await post('/settings/maintenance', { mode: 'on' }, 'https://evil.example')).status, 403);
+    // Browsers only send the real Origin on our own form posts if the page allows it.
+    assert.equal((await fetch(`${base}/admin`, { headers: basic() })).headers.get('referrer-policy'), 'same-origin');
+    const raw = (headers: Record<string, string>) =>
+      fetch(`${base}/admin/settings/maintenance`, { method: 'POST', redirect: 'manual', headers: { ...basic(), 'Content-Type': 'application/x-www-form-urlencoded', ...headers }, body: 'mode=off' });
+    assert.equal((await raw({ 'Sec-Fetch-Site': 'cross-site', Origin: base })).status, 403, 'browser says cross-site');
+    assert.equal((await raw({ Origin: 'null' })).status, 403, 'opaque origin');
+    assert.equal((await raw({ 'Sec-Fetch-Site': 'same-origin' })).status, 303, 'browser says same-origin');
   });
 
   test('every page renders, with user data escaped', async () => {
@@ -385,5 +425,57 @@ describe('admin console', () => {
     await post('/settings', { support_phone: '+256700000000', min_app_version: '1.0.0' });
     cfg = (await call('GET', '/config')).json;
     assert.equal(cfg.maintenance, false);
+  });
+});
+
+describe('push notifications (FCM)', () => {
+  const ENTEBBE = { lat: 0.0512, lng: 32.4637 }; // away from the other tests' mechanics
+  const registerToken = async (token: string, t: string) =>
+    assert.equal((await call('POST', '/me/push-token', { token: t, body: { token, platform: 'android' } })).status, 204);
+
+  test('an SOS reaches mechanics whose app is closed; open apps get it live; dead tokens are dropped', async () => {
+    const closed = await mechanic('push-closed@x.ug', ENTEBBE.lat + 0.01, ENTEBBE.lng);
+    const open = await mechanic('push-open@x.ug', ENTEBBE.lat, ENTEBBE.lng + 0.01);
+    const gone = await mechanic('push-gone@x.ug', ENTEBBE.lat - 0.01, ENTEBBE.lng);
+    await registerToken('fcm-closed-phone', closed.accessToken);
+    await registerToken('fcm-open-phone', open.accessToken);
+    await registerToken('fcm-uninstalled', gone.accessToken);
+    fcmDead.add('fcm-uninstalled');
+    await listen(open.accessToken);
+
+    const owner = await ownerWithCar('push-owner@x.ug');
+    const sos = await call('POST', '/sos', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, issue: 'Car Crash', ...ENTEBBE } });
+    assert.equal(sos.status, 201);
+    const jobId = sos.json.jobId;
+
+    await eventually(() => fcmCalls.some((c) => c.message.token === 'fcm-closed-phone'), 'FCM message to the closed app');
+    const msg = fcmCalls.find((c) => c.message.token === 'fcm-closed-phone')!;
+    assert.equal(msg.path, '/v1/projects/mcr-test/messages:send');
+    assert.equal(msg.auth, 'Bearer fake-access');
+    assert.equal(msg.message.android.priority, 'HIGH');
+    assert.equal(msg.message.data.channelId, 'sos');
+    assert.equal(msg.message.data.title, 'New SOS · Car Crash');
+    assert.equal(JSON.parse(msg.message.data.body).url, `/mechanic/incoming/${jobId}`);
+    for (const v of Object.values(msg.message.data)) assert.equal(typeof v, 'string', 'FCM data values must be strings');
+
+    await eventually(() => fcmCalls.some((c) => c.message.token === 'fcm-uninstalled'), 'FCM attempt to the dead token');
+    for (let i = 0; i < 40 && (await pool.query(`SELECT 1 FROM device_tokens WHERE token = 'fcm-uninstalled'`)).rowCount; i++) await wait(50);
+    assert.equal((await pool.query(`SELECT 1 FROM device_tokens WHERE token = 'fcm-uninstalled'`)).rowCount, 0, 'dead token removed');
+    assert.ok(!fcmCalls.some((c) => c.message.token === 'fcm-open-phone'), 'a connected app gets the socket event, not a push');
+  });
+
+  test('admin can send a test notification to a phone', async () => {
+    const o = await register('owner', 'push-test@x.ug');
+    await registerToken('fcm-owner-phone', o.accessToken);
+    const res = await fetch(`${base}/admin/users/${o.user.id}/test-push`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { Authorization: `Basic ${Buffer.from('staff:admin-test').toString('base64')}`, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ back: `/admin/users/${o.user.id}` }),
+    });
+    assert.equal(res.headers.get('location'), `/admin/users/${o.user.id}?notice=push-sent`);
+    await eventually(() => fcmCalls.some((c) => c.message.token === 'fcm-owner-phone' && c.message.data.title === 'Test from MyCarRepair'), 'test push');
+    const page = await (await fetch(`${base}/admin/settings`, { headers: { Authorization: `Basic ${Buffer.from('staff:admin-test').toString('base64')}` } })).text();
+    assert.ok(page.includes('Phones get SOS alerts'), 'settings show push as on');
   });
 });
