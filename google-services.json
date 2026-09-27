@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1057307378688",
+    "project_id": "mycarrepair-83304",
+    "storage_bucket": "mycarrepair-83304.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1057307378688:android:bdfbe8efdc85a71ba084e5",
+        "android_client_info": {
+          "package_name": "ug.mycarrepair.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGMdKeEGJzknpCn3n9CzIgXSJ3UCGxGAo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1057307378688:android:9238815e3b67e3c4a084e5",
+        "android_client_info": {
+          "package_name": "ug.mycarrepair.mechanic"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGMdKeEGJzknpCn3n9CzIgXSJ3UCGxGAo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
