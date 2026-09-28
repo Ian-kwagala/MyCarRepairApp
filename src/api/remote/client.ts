@@ -18,6 +18,7 @@ import type {
   Vehicle,
 } from '@/models';
 
+import { forgetUploadedPhotos } from '@/services/media';
 import { setServerWaking } from '@/store/server-status';
 
 import { ApiError, Errors } from '../errors';
@@ -69,7 +70,11 @@ async function appendPhoto(form: FormData, field: string, p: LocalPhoto) {
   // The global fetch is expo/fetch, which rejects React Native's { uri, name, type } parts before sending
   // (the app then reported "no connection"). An expo-file-system File implements Blob; its bytes are read
   // from disk when the request is built.
-  form.append(field, new File(p.uri) as unknown as Blob);
+  const file = new File(p.uri);
+  if (!file.exists) {
+    throw new ApiError('PHOTO_MISSING', 'A photo is no longer on this phone. Remove it, add it again and send once more.', 0);
+  }
+  form.append(field, file as unknown as Blob);
 }
 
 /**
@@ -198,6 +203,16 @@ export class RemoteApiClient implements ApiClient {
   }
 
   /** Turns a login/register response into a Session and starts using its tokens. */
+  /**
+   * A multipart request with photos. Once the server has them, the local copies kept for the upload are
+   * deleted (see services/media); on failure they stay so the user can simply press send again.
+   */
+  private async upload<T>(method: string, path: string, fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>): Promise<T> {
+    const result = await this.req<T>(method, path, await toForm(fields, files));
+    forgetUploadedPhotos(Object.values(files).flat());
+    return result;
+  }
+
   private asSession(res: any): Session {
     const s: Session = { user: res.user, accessToken: res.accessToken ?? null, refreshToken: res.refreshToken ?? null };
     this.setAuth(s);
@@ -259,18 +274,19 @@ export class RemoteApiClient implements ApiClient {
   getVehicle(id: number) {
     return this.req<{ vehicle: Vehicle; recentJobs: Job[] }>('GET', `/vehicles/${id}`);
   }
-  async createVehicle(input: VehicleCreate) {
+  createVehicle(input: VehicleCreate) {
     const { photos, ...fields } = input;
-    return this.req<Vehicle>('POST', '/vehicles', await toForm(fields as Record<string, unknown>, { photos }));
+    return this.upload<Vehicle>('POST', '/vehicles', fields as Record<string, unknown>, { photos });
   }
-  async updateVehicle(id: number, patch: VehicleUpdate) {
+  updateVehicle(id: number, patch: VehicleUpdate) {
     // keepPhotos lists existing photo URLs to keep; newPhotos are uploaded as files.
     const { newPhotos, keepPhotos, ...fields } = patch;
-    return this.req<Vehicle>(
+    return this.upload<Vehicle>(
       'PATCH',
       `/vehicles/${id}`,
       // keepPhotos goes as JSON so "keep none" ([]) is distinguishable from "unchanged" (absent).
-      await toForm({ ...fields, keepPhotos: keepPhotos ? JSON.stringify(keepPhotos) : undefined } as Record<string, unknown>, { photos: newPhotos ?? [] }),
+      { ...fields, keepPhotos: keepPhotos ? JSON.stringify(keepPhotos) : undefined } as Record<string, unknown>,
+      { photos: newPhotos ?? [] },
     );
   }
   async deleteVehicle(id: number) {
@@ -281,9 +297,9 @@ export class RemoteApiClient implements ApiClient {
   createBooking(input: BookingInput) {
     return this.req<Job>('POST', '/jobs/bookings', { ...input });
   }
-  async createDiagnostic(input: DiagnosticInput) {
+  createDiagnostic(input: DiagnosticInput) {
     const { photo, ...fields } = input;
-    return this.req<Job>('POST', '/jobs/diagnostics', await toForm(fields as Record<string, unknown>, { photo: photo ? [photo] : [] }));
+    return this.upload<Job>('POST', '/jobs/diagnostics', fields as Record<string, unknown>, { photo: photo ? [photo] : [] });
   }
   sendSos(input: SosInput) {
     return this.req<SosResult>('POST', '/sos', { ...input });
@@ -327,19 +343,11 @@ export class RemoteApiClient implements ApiClient {
   markArrived(jobId: number) {
     return this.req<Job>('POST', `/mechanic/jobs/${jobId}/arrived`);
   }
-  async updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }) {
-    return this.req<ChecklistItem>(
-      'PATCH',
-      `/mechanic/tasks/${taskId}`,
-      await toForm({ isCompleted: input.isCompleted }, { photo: input.photo ? [input.photo] : [] }),
-    );
+  updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }) {
+    return this.upload<ChecklistItem>('PATCH', `/mechanic/tasks/${taskId}`, { isCompleted: input.isCompleted }, { photo: input.photo ? [input.photo] : [] });
   }
-  async createQuote(jobId: number, input: QuoteInput) {
-    return this.req<PartsQuote>(
-      'POST',
-      `/mechanic/jobs/${jobId}/quotes`,
-      await toForm({ partName: input.partName, price: input.price }, { photos: input.photos }),
-    );
+  createQuote(jobId: number, input: QuoteInput) {
+    return this.upload<PartsQuote>('POST', `/mechanic/jobs/${jobId}/quotes`, { partName: input.partName, price: input.price }, { photos: input.photos });
   }
   completeJob(jobId: number) {
     return this.req<Job>('POST', `/mechanic/jobs/${jobId}/complete`);

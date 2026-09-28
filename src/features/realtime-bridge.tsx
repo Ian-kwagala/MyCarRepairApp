@@ -16,6 +16,11 @@ import { toast } from '@/store/toast';
 // Connects live server events to the UI: refreshes data, shows toasts and system notifications, and
 // opens the right screen when a notification is tapped.
 
+// Notification taps only exist on phones; expo-notifications throws on web, so the web preview gets a stub. The
+// choice is fixed per platform, so the hook is still called unconditionally on every render.
+const useLastNotificationTap: () => Notifications.NotificationResponse | null | undefined =
+  Platform.OS === 'web' ? () => null : Notifications.useLastNotificationResponse;
+
 /** Deep-link target for an event (§8): the screen to open when the user taps its toast or notification. */
 export function linkFor(role: 'owner' | 'mechanic' | 'admin', event: RealtimeEvent, p: { jobId?: number; quoteId?: number }): Href | null {
   if (event === 'mechanic_approved') return '/mechanic';
@@ -95,7 +100,7 @@ export function RealtimeBridge() {
   }, [userId, role]);
 
   // Push / local notification tap → deep link, including the tap that launched the app from closed.
-  const lastTap = Notifications.useLastNotificationResponse();
+  const lastTap = useLastNotificationTap();
   const handledTap = useRef<string | null>(null);
   useEffect(() => {
     if (Platform.OS === 'web' || !userId || !lastTap || lastTap.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;

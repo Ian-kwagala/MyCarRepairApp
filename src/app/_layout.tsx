@@ -17,6 +17,7 @@ import { ToastHost } from '@/components';
 import { LockScreen, MaintenanceScreen } from '@/features/app-gates';
 import { RealtimeBridge } from '@/features/realtime-bridge';
 import { useConfig } from '@/hooks/queries';
+import { cleanOldPendingPhotos } from '@/services/media';
 import { configureNotifications } from '@/services/notifications';
 import { persister, queryClient } from '@/services/query-client';
 import { usePrefs } from '@/store/prefs';
@@ -47,6 +48,8 @@ export default function RootLayout() {
     void usePrefs.getState().load();
     void useSession.getState().hydrate();
     void configureNotifications();
+    // Photos picked days ago but never sent (a screen left half-way) would otherwise pile up in app storage.
+    cleanOldPendingPhotos();
   }, []);
 
   // A font error still counts as ready: the app falls back to system fonts rather than hanging.
