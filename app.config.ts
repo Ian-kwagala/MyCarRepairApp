@@ -160,6 +160,10 @@ const config: ExpoConfig = {
           enableMinifyInReleaseBuilds: true,
           enableShrinkResourcesInReleaseBuilds: true,
           extraProguardRules: '-dontobfuscate',
+          // Data files that expo-updates' crypto dependencies (BouncyCastle, Commons Codec) ship but never read here:
+          // lookup tables for the post-quantum "Picnic" scheme (1.2 MB) and phonetic-matching rules. Update code
+          // signing uses RSA, so leaving them out saves space without changing behaviour.
+          packagingOptions: { exclude: ['org/bouncycastle/pqc/crypto/picnic/**', 'org/apache/commons/codec/language/**'] },
         },
       },
     ],
