@@ -26,8 +26,8 @@ Build a sideloadable APK without EAS (needs JDK 17+ and an Android SDK with plat
 NDK 27.1 at `ANDROID_HOME`):
 
 ```bash
-scripts/build-apk.sh owner       # → dist/MyCarRepair-owner.apk
-scripts/build-apk.sh mechanic    # → dist/MCR-Mechanic.apk
+scripts/build-apk.sh owner       # → apks/MyCarRepair-owner.apk
+scripts/build-apk.sh mechanic    # → apks/MCR-Mechanic.apk
 ```
 
 Each APK installs on any Android phone running Android 7.0 or newer: it carries native code for both 64-bit
@@ -37,8 +37,26 @@ Each APK installs on any Android phone running Android 7.0 or newer: it carries 
 These APKs are signed with the Expo template's debug key, which is fine for testing but not for the Play
 Store. For store builds use `npx eas-cli@latest build --profile production` with `APP_VARIANT` set.
 
-> **The two apps share data through the backend.** Build both with the same `EXPO_PUBLIC_API_URL`
-> (see **Backend** below). An APK built without it runs in local data mode, where each app only sees its own data.
+> **The two apps share data through the backend.** Both store apps use the live API
+> (`https://mycarrepair-api.onrender.com/api/v1`, set in `app.config.ts`) unless `EXPO_PUBLIC_API_URL`
+> overrides it. `EXPO_PUBLIC_API_URL=""` builds a local-data-mode APK, where each app only sees its own data.
+
+### Online updates (no new APK)
+
+Both store apps check Expo's update service (EAS Update, projects `@ian_mufasa/mycarrepair` and
+`@ian_mufasa/mycarrepair-mechanic`, channel `production`) each time they open. They download a new update in the
+background and run it from the next launch.
+
+```bash
+scripts/publish-update.sh both "What changed"     # or: owner | mechanic   (needs EXPO_TOKEN)
+```
+
+- **Ships online:** anything in JavaScript and assets: screens, text, colours, logic, images.
+- **Needs a new APK:** native changes: new native modules, permissions, icons, splash, Firebase config, config
+  plugins. Bump `version` in `app.config.ts` for that APK: updates only reach APKs with the same version
+  (`runtimeVersion` policy `appVersion`), so older APKs never receive code they can't run.
+- The free Expo plan covers 1,000 monthly active users for updates.
+- The server (API and `/admin`) never needs an APK: Render redeploys it on every push to `main`.
 
 ## Quick start
 
@@ -103,16 +121,11 @@ On Render's free plan the API sleeps after 15 minutes without traffic and takes 
 apps allow for this: the first request after a quiet spell waits up to 75 seconds and shows "Connecting to
 MyCarRepair". An online mechanic's location updates keep the API awake. Move to a paid plan for real users.
 
-**Point the apps at it:** set `EXPO_PUBLIC_API_URL` when you start or build them:
-
-```bash
-EXPO_PUBLIC_API_URL=https://mycarrepair-api.onrender.com/api/v1 scripts/build-apk.sh owner
-EXPO_PUBLIC_API_URL=https://mycarrepair-api.onrender.com/api/v1 scripts/build-apk.sh mechanic
-```
-
-Without `EXPO_PUBLIC_API_URL`, an app falls back to **local data mode**: an empty store on the phone that
-enforces the same rules, useful for trying the UI with no server. Release builds only accept `https://`
-API URLs.
+**The apps' server address:** the owner and mechanic apps use the live API by default (`app.config.ts`), and
+so do their online updates. `EXPO_PUBLIC_API_URL` points a build elsewhere, for example a local server
+(`http://localhost:4000/api/v1`, development builds only). The dev build (no `APP_VARIANT`), or
+`EXPO_PUBLIC_API_URL=""`, runs in **local data mode**: an empty store on the phone that enforces the same
+rules, useful for trying the UI with no server. Release builds only accept `https://` API URLs.
 
 Tests: `cd server && npm test` runs the API integration tests against PostgreSQL (`TEST_DATABASE_URL`). CI
 runs them on every push.

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Builds a sideloadable release APK for one app variant, without EAS.
-#   EXPO_PUBLIC_API_URL=https://<api-host>/api/v1 scripts/build-apk.sh owner
-#   scripts/build-apk.sh owner      → dist/MyCarRepair-owner.apk     (ug.mycarrepair.app)
-#   scripts/build-apk.sh mechanic   → dist/MCR-Mechanic.apk          (ug.mycarrepair.mechanic)
+#   scripts/build-apk.sh owner      → apks/MyCarRepair-owner.apk     (ug.mycarrepair.app)
+#   scripts/build-apk.sh mechanic   → apks/MCR-Mechanic.apk          (ug.mycarrepair.mechanic)
 # Needs JDK 17+, and ANDROID_HOME pointing at an SDK with platform 36, build-tools 36, NDK 27.1.
 # The APK is signed with the debug key from the Expo template: fine for testing, not for the Play Store
 # (use `eas build --profile production` for store builds).
@@ -21,8 +20,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export APP_VARIANT="$VARIANT" NODE_ENV=production CI=1
 : "${ANDROID_HOME:?Set ANDROID_HOME to your Android SDK}"
-if [ -z "${EXPO_PUBLIC_API_URL:-}" ]; then
-  echo "warning: EXPO_PUBLIC_API_URL is not set: this APK will use local data mode and won't share data with the other app." >&2
+# Store apps talk to the live API by default (app.config.ts). EXPO_PUBLIC_API_URL points them elsewhere, and an
+# empty value builds a local-data-mode APK for trying the UI offline.
+if [ -n "${EXPO_PUBLIC_API_URL+set}" ] && [ -z "$EXPO_PUBLIC_API_URL" ]; then
+  echo "note: EXPO_PUBLIC_API_URL is empty: this APK uses local data mode and won't share data with the other app." >&2
 fi
 
 # Metro caches transformed modules (including inlined config); start clean so variants never mix.
@@ -38,7 +39,7 @@ echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 # x86/x86_64 are only for emulators and add ~15 MB; pass ARCHS=armeabi-v7a,arm64-v8a,x86,x86_64 to include them.
 (cd android && ./gradlew assembleRelease -PreactNativeArchitectures="${ARCHS:-armeabi-v7a,arm64-v8a}" --console=plain)
 
-# Copy the finished APK into dist/ under the variant's name.
-mkdir -p dist
-cp android/app/build/outputs/apk/release/app-release.apk "dist/$OUT"
-echo "Built dist/$OUT"
+# Copy the finished APK into apks/ under the variant's name (not dist/: publishing an online update clears dist/).
+mkdir -p apks
+cp android/app/build/outputs/apk/release/app-release.apk "apks/$OUT"
+echo "Built apks/$OUT"

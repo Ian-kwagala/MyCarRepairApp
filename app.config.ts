@@ -52,6 +52,20 @@ const v = VARIANTS[VARIANT];
 const GOOGLE_SERVICES = './google-services.json';
 const fcm = existsSync(GOOGLE_SERVICES);
 
+// Online updates (EAS Update): each store app has its own Expo project under the ian_mufasa account. The IDs are
+// public identifiers, not secrets. The dev build has none, so it can never publish over a store app by mistake.
+const EAS_PROJECT_IDS = {
+  owner: 'e4044d6f-6ddc-47ec-b84f-426abafad81f',
+  mechanic: 'a9201386-4a09-4b1e-843a-6631310229c9',
+} as const;
+const easProjectId = VARIANT === 'all' ? undefined : EAS_PROJECT_IDS[VARIANT];
+
+// The live API. Store apps default to it, and so do their online updates: an update carries this config, so it
+// must never lose the server address. EXPO_PUBLIC_API_URL overrides it; set it to "" for local data mode.
+const PRODUCTION_API_URL = 'https://mycarrepair-api.onrender.com/api/v1';
+const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
+const apiUrl = envApiUrl !== undefined ? envApiUrl || undefined : VARIANT === 'all' ? undefined : PRODUCTION_API_URL;
+
 /** Path to an image in the current variant's asset folder. */
 const img = (file: string) => `./assets/images/${v.assets}/${file}`;
 
@@ -60,7 +74,14 @@ const config: ExpoConfig = {
   name: v.name,
   slug: v.slug,
   scheme: v.scheme,
+  // Bump the version for every new APK with native changes: online updates only reach builds with the same
+  // version (runtimeVersion policy below), so older APKs never receive code that needs newer native parts.
   version: '1.0.0',
+  runtimeVersion: { policy: 'appVersion' },
+  // Store apps check the "production" channel on launch, download in the background and apply on the next launch.
+  ...(easProjectId
+    ? { owner: 'ian_mufasa', updates: { url: `https://u.expo.dev/${easProjectId}`, requestHeaders: { 'expo-channel-name': 'production' } } }
+    : {}),
   orientation: 'portrait',
   icon: img('icon.png'),
   userInterfaceStyle: 'automatic',
@@ -149,13 +170,14 @@ const config: ExpoConfig = {
     typedRoutes: true,
     reactCompiler: true,
   },
-  // Leave EXPO_PUBLIC_API_URL unset to run on the on-device local data store (see README).
+  // Without an API URL (dev build, or EXPO_PUBLIC_API_URL="") the app runs on the on-device local data store.
   extra: {
     ...(VARIANT === 'all' ? {} : { appRole: VARIANT }),
     // Native Google Maps only when a key is baked in; otherwise map cards fall back to links (map-card.tsx).
     mapsEnabled: !!process.env.MAPS_KEY,
     fcm,
-    ...(process.env.EXPO_PUBLIC_API_URL ? { apiUrl: process.env.EXPO_PUBLIC_API_URL } : {}),
+    ...(apiUrl ? { apiUrl } : {}),
+    ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },
 };
 
