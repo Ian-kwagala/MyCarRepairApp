@@ -1,4 +1,5 @@
-// Data model types shared by the whole app: users, vehicles, jobs, quotes, reviews, config, notifications.
+// Data model types shared by the whole app: users, vehicles, jobs, quotes, reviews, shop products and orders,
+// config, notifications.
 // Blueprint Appendix A.1 — mirrors the existing PostgreSQL tables 1:1 (camelCase over the wire).
 
 /** Who a user is. Admins use the web dashboard, not this app. */
@@ -148,6 +149,68 @@ export interface AppConfig {
   maintenance: boolean;
   minAppVersion: string;
   supportPhone: string;
+  /** Shop delivery fee in UGX, added to orders delivered to an address (pickup is free). */
+  deliveryFee: number;
+  /** Where shop orders are collected when the owner chooses pickup. */
+  pickupLocation: string;
+}
+
+// ── Shop (marketplace): genuine spare parts and accessories sold by MyCarRepair ─────────────────────────────
+
+/** Shop sections. */
+export type ProductCategory = 'parts' | 'accessories' | 'tyres' | 'batteries' | 'fluids' | 'electronics';
+
+/** A product in the shop. Prices are UGX; `stock` 0 means sold out. */
+export interface Product {
+  id: number;
+  name: string;
+  category: ProductCategory;
+  brand: string | null;
+  partNumber: string | null;
+  description: string | null;
+  /** Cars it fits, as free text, e.g. "Toyota Premio 2007–2016, Toyota Allion". Empty means universal. */
+  compatibleWith: string | null;
+  price: number;
+  stock: number;
+  warrantyMonths: number | null;
+  photos: string[];
+  createdAt: string;
+}
+
+/**
+ * Order lifecycle: placed → confirmed → out_for_delivery (delivery) or ready_for_pickup (pickup) → delivered.
+ * Placed orders can be cancelled by the owner; MyCarRepair can cancel any order that isn't delivered yet.
+ */
+export type OrderStatus = 'placed' | 'confirmed' | 'out_for_delivery' | 'ready_for_pickup' | 'delivered' | 'cancelled';
+/** How an order reaches the owner. */
+export type Fulfilment = 'delivery' | 'pickup';
+/** Paid on delivery or at pickup: cash, or mobile money (MTN MoMo / Airtel Money). */
+export type PaymentMethod = 'cash' | 'mobile_money';
+
+/** One line of an order, with the name and price as they were when ordered. */
+export interface OrderItem {
+  productId: number | null;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  photo: string | null;
+}
+
+/** A shop order. Totals are computed by the server from its own prices. */
+export interface Order {
+  id: number;
+  status: OrderStatus;
+  fulfilment: Fulfilment;
+  paymentMethod: PaymentMethod;
+  deliveryAddress: string | null;
+  contactPhone: string;
+  note: string | null;
+  items: OrderItem[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Summary numbers on the mechanic's dashboard. */
@@ -185,12 +248,14 @@ export type RealtimeEvent =
   | 'quote_updated'
   | 'appointment_update'
   | 'job_finished'
-  | 'mechanic_approved';
+  | 'mechanic_approved'
+  | 'order_update';
 
 /** Data that comes with a realtime event; which fields are set depends on the event. */
 export interface RealtimePayload {
   jobId?: number;
   quoteId?: number;
+  orderId?: number;
   lat?: number;
   lng?: number;
   [key: string]: unknown;
@@ -205,6 +270,7 @@ export interface AppNotification {
   body: string;
   jobId?: number;
   quoteId?: number;
+  orderId?: number;
   createdAt: string;
   read: boolean;
 }

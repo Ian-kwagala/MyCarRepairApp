@@ -78,6 +78,55 @@ export interface ReviewRow {
   created_at: Date;
 }
 
+/** products: the shop catalogue (additive table). */
+export interface ProductRow {
+  id: number;
+  name: string;
+  category: string;
+  brand: string | null;
+  part_number: string | null;
+  description: string | null;
+  compatible_with: string | null;
+  price: number;
+  stock: number;
+  warranty_months: number | null;
+  photos: string | null;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** orders: shop orders (additive table). */
+export interface OrderRow {
+  id: number;
+  owner_id: number;
+  status: string;
+  fulfilment: string;
+  payment_method: string;
+  delivery_address: string | null;
+  delivery_lat: number | null;
+  delivery_lng: number | null;
+  contact_phone: string;
+  note: string | null;
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** order_items: order lines with the name and price at ordering time (additive table). */
+export interface OrderItemRow {
+  id: number;
+  order_id: number;
+  product_id: number | null;
+  name: string;
+  unit_price: number;
+  quantity: number;
+  /** First photo of the product, joined in when listing items (not a column). */
+  photos?: string | null;
+}
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {

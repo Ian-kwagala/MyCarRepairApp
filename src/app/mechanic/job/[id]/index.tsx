@@ -1,3 +1,4 @@
+// Mechanic's screen for one job. Shows a different view for each stage of the job.
 import { router, useLocalSearchParams } from 'expo-router';
 import { CircleCheck, FileText, Lock, MapPinned, Navigation, Phone, Plus, Share2, Star } from '@/components/icons';
 import { useState } from 'react';
@@ -33,12 +34,10 @@ import { queryClient } from '@/services/query-client';
 import { openReceipt, shareReceipt } from '@/services/receipt';
 import { toast } from '@/store/toast';
 import { Space, useColors } from '@/theme';
-import { confirm } from '@/utils/confirm';
+import { choosePhotoSource, confirm } from '@/utils/confirm';
 import { formatDate, formatUGX } from '@/utils/format';
 import { distanceKm, etaMinutes, formatKm } from '@/utils/geo';
 import { canFinish, computeTotals, parseFeedback, progress, statusLabel, vehicleLabel } from '@/utils/jobs';
-
-// Mechanic's screen for one job. Shows a different view for each stage of the job.
 
 /**
  * M3 En route (accepted) → M4 Digital job card (fixing) → completion summary. An open job that hasn't
@@ -198,10 +197,13 @@ function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; 
     }
   };
 
-  // Takes a photo as proof for a task, and marks the task done with it.
+  // Adds photo proof for a task (camera or gallery), and marks the task done with it.
   const photo = async (t: ChecklistItem) => {
     try {
-      const [p] = await pickPhotos('camera', 1);
+      const source = await choosePhotoSource(`Photo proof · ${t.taskDescription}`);
+      if (!source) return;
+      // The task is remembered so a camera photo still reaches it if Android closes the app meanwhile.
+      const [p] = await pickPhotos(source, 1, { kind: 'task', jobId: job.id, taskId: t.id, task: t.taskDescription });
       if (!p) return;
       setBusyTask(t.id);
       await api.updateTask(t.id, { isCompleted: true, photo: p });

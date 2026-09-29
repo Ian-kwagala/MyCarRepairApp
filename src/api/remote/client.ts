@@ -12,7 +12,9 @@ import type {
   Job,
   LocalPhoto,
   MechanicStats,
+  Order,
   PartsQuote,
+  Product,
   Review,
   User,
   Vehicle,
@@ -32,6 +34,8 @@ import type {
   LoginInput,
   MechanicReview,
   MechanicTab,
+  PlaceOrderInput,
+  ProductQuery,
   ProfilePatch,
   QuoteInput,
   RegisterInput,
@@ -354,6 +358,30 @@ export class RemoteApiClient implements ApiClient {
   }
   earnings(range: EarningsRange) {
     return this.req<Earnings>('GET', `/mechanic/earnings?range=${range}`);
+  }
+  // Shop (owner)
+  listProducts(query: ProductQuery) {
+    const qs = new URLSearchParams();
+    if (query.category) qs.set('category', query.category);
+    if (query.q?.trim()) qs.set('q', query.q.trim());
+    if (query.vehicleId) qs.set('vehicleId', String(query.vehicleId));
+    const s = qs.toString();
+    return this.req<Product[]>('GET', `/shop/products${s ? `?${s}` : ''}`);
+  }
+  getProduct(id: number) {
+    return this.req<Product>('GET', `/shop/products/${id}`);
+  }
+  placeOrder(input: PlaceOrderInput) {
+    return this.req<Order>('POST', '/shop/orders', { ...input });
+  }
+  myOrders() {
+    return this.req<Order[]>('GET', '/shop/orders');
+  }
+  getOrder(id: number) {
+    return this.req<Order>('GET', `/shop/orders/${id}`);
+  }
+  cancelOrder(id: number) {
+    return this.req<Order>('POST', `/shop/orders/${id}/cancel`);
   }
   myReviews() {
     return this.req<{ reviews: MechanicReview[]; average: number; count: number }>('GET', '/mechanic/reviews');

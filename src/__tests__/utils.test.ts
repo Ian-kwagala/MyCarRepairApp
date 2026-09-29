@@ -1,9 +1,10 @@
 /// <reference types="jest" />
 // Unit tests for the pure helper functions: money formatting, job stages, billing, the finish lock,
-// review tags, phone numbers, service-due dates, distances and date grouping.
+// review tags, phone numbers, service-due dates, distances, date grouping and shop order rules.
 import { composeFeedback, canFinish, computeTotals, parseFeedback, serviceDueInDays, stageIndex } from '@/utils/jobs';
 import { dateGroup, formatAmountInput, formatUGX, normalizePhone, parseAmount } from '@/utils/format';
 import { distanceKm } from '@/utils/geo';
+import { nextOrderStatuses, orderSteps, orderTotals } from '@/utils/shop';
 import type { ChecklistItem, PartsQuote } from '@/models';
 
 // Minimal test fixtures: a checklist task (done or not) and a quote (approved / rejected / pending).
@@ -74,5 +75,25 @@ describe('misc', () => {
   it('groups activity like the web (Today … Older)', () => {
     expect(dateGroup(new Date().toISOString())).toBe('Today');
     expect(dateGroup('2020-01-01T00:00:00Z')).toBe('Older');
+  });
+});
+
+describe('shop orders', () => {
+  const lines = [
+    { unitPrice: 85_000, quantity: 2 },
+    { unitPrice: 15_000, quantity: 1 },
+  ];
+  it('adds the delivery fee for delivery only', () => {
+    expect(orderTotals(lines, 'delivery', 10_000)).toEqual({ subtotal: 185_000, deliveryFee: 10_000, total: 195_000 });
+    expect(orderTotals(lines, 'pickup', 10_000)).toEqual({ subtotal: 185_000, deliveryFee: 0, total: 185_000 });
+    expect(orderTotals([], 'delivery', 10_000).total).toBe(0);
+  });
+  it('follows delivery or pickup steps, and staff can cancel until delivered', () => {
+    expect(orderSteps('delivery')).toEqual(['placed', 'confirmed', 'out_for_delivery', 'delivered']);
+    expect(orderSteps('pickup')).toEqual(['placed', 'confirmed', 'ready_for_pickup', 'delivered']);
+    expect(nextOrderStatuses('confirmed', 'pickup')).toEqual(['ready_for_pickup', 'cancelled']);
+    expect(nextOrderStatuses('out_for_delivery', 'delivery')).toEqual(['delivered', 'cancelled']);
+    expect(nextOrderStatuses('delivered', 'delivery')).toEqual([]);
+    expect(nextOrderStatuses('cancelled', 'pickup')).toEqual([]);
   });
 });

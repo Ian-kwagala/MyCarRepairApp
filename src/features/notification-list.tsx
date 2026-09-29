@@ -1,5 +1,6 @@
+// The notification history list, grouped by day, shared by the owner and mechanic notification screens.
 import { router } from 'expo-router';
-import { BadgeCheck, Bell, Calendar, Car, CircleCheck, Package, Siren, ThumbsUp, Wrench, type LucideIcon } from '@/components/icons';
+import { BadgeCheck, Bell, Calendar, Car, CircleCheck, Package, ShoppingBag, Siren, ThumbsUp, Wrench, type LucideIcon } from '@/components/icons';
 import { Pressable, View } from 'react-native';
 
 import { EmptyState, Row, Section, Text } from '@/components';
@@ -10,8 +11,6 @@ import { Radius, Space, useColors } from '@/theme';
 import { groupByDate, timeAgo } from '@/utils/format';
 
 import { linkFor } from './realtime-bridge';
-
-// The notification history list, grouped by day, shared by the owner and mechanic notification screens.
 
 // Icon per event type; anything not listed uses the calendar icon.
 const ICONS: Partial<Record<RealtimeEvent, LucideIcon>> = {
@@ -24,6 +23,7 @@ const ICONS: Partial<Record<RealtimeEvent, LucideIcon>> = {
   appointment_update: ThumbsUp,
   job_finished: Wrench,
   mechanic_approved: BadgeCheck,
+  order_update: ShoppingBag,
 };
 
 /**
@@ -42,6 +42,7 @@ export function NotificationList({ items }: { items: AppNotification[] }) {
         <Section key={g.title} title={g.title} style={gi === 0 ? { marginTop: 0 } : undefined}>
           {g.data.map((n) => {
             const Icon = ICONS[n.event] ?? Calendar;
+            // Saved notifications keep the job/quote/order id, so old ones still open the right screen.
             const href = user ? linkFor(user.role, n.event, n) : null;
             return (
               <Pressable

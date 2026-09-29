@@ -7,6 +7,8 @@ import { Platform } from 'react-native';
 
 import type { LocalPhoto } from '@/models';
 
+import { Keys, kv } from './storage';
+
 /** Resize to 1600 px, JPEG 0.7 before upload (§4.2, §11.1). */
 async function compress(uri: string, width?: number): Promise<string> {
   try {
@@ -84,6 +86,16 @@ function toLocalPhoto(uri: string, i: number): LocalPhoto {
 /** Where to get photos from: take a new one, or choose from the gallery. */
 export type PhotoSource = 'camera' | 'library';
 
+/**
+ * What a camera photo is for. Saved before the camera opens: Android may close the app while the camera app is
+ * in front (common on phones with little memory), and the photo is then recovered on return and delivered here.
+ */
+export type CameraPurpose = { kind: 'task'; jobId: number; taskId: number; task: string } | { kind: 'form'; route: string };
+
+const CAMERA_PURPOSE_KEY = Keys.cameraPurpose;
+// A photo recovered long after the camera opened no longer belongs to what the user is doing.
+const CAMERA_PURPOSE_MAX_AGE_MS = 30 * 60_000;
+
 /** Thrown when the user refuses camera or photo-library access; its message can be shown as-is. */
 export class PermissionDeniedError extends Error {}
 
@@ -91,12 +103,16 @@ export class PermissionDeniedError extends Error {}
  * Takes a photo or lets the user pick up to `limit` from the library, and returns them compressed.
  * Returns [] if the user cancels. Permission is asked on first photo action, not at launch (§11).
  */
-export async function pickPhotos(source: PhotoSource, limit: number): Promise<LocalPhoto[]> {
+export async function pickPhotos(source: PhotoSource, limit: number, purpose?: CameraPurpose): Promise<LocalPhoto[]> {
   if (limit <= 0) return [];
   if (source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) throw new PermissionDeniedError('Camera access is needed to take photos.');
+    if (purpose && Platform.OS === 'android') await kv.set(CAMERA_PURPOSE_KEY, { ...purpose, at: Date.now() });
     const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
+    // Normal return: nothing to recover. (If the app was closed meanwhile this line never runs, and
+    // recoverCameraPhoto() finds the saved purpose instead.)
+    if (purpose) await kv.remove(CAMERA_PURPOSE_KEY);
     if (res.canceled) return [];
     const uris = await Promise.all(res.assets.map((a) => compress(a.uri, a.width)));
     return uris.map(keepForUpload).map(toLocalPhoto);
@@ -112,6 +128,28 @@ export async function pickPhotos(source: PhotoSource, limit: number): Promise<Lo
   if (res.canceled) return [];
   const uris = await Promise.all(res.assets.slice(0, limit).map((a) => compress(a.uri, a.width)));
   return uris.map(keepForUpload).map(toLocalPhoto);
+}
+
+/**
+ * Android only: the photo taken while Android closed the app (or its screen), with what it was for. Call on start
+ * and whenever the app returns to the foreground. Returns null when there is nothing to recover.
+ */
+export async function recoverCameraPhoto(): Promise<{ purpose: CameraPurpose; photo: LocalPhoto } | null> {
+  if (Platform.OS !== 'android') return null;
+  let res: Awaited<ReturnType<typeof ImagePicker.getPendingResultAsync>>;
+  try {
+    res = await ImagePicker.getPendingResultAsync();
+  } catch {
+    return null;
+  }
+  if (!res || !('assets' in res) || res.canceled || !res.assets?.length) return null;
+  const saved = await kv.get<(CameraPurpose & { at: number }) | null>(CAMERA_PURPOSE_KEY, null);
+  await kv.remove(CAMERA_PURPOSE_KEY);
+  if (!saved || Date.now() - saved.at > CAMERA_PURPOSE_MAX_AGE_MS) return null;
+  const { at: _at, ...purpose } = saved;
+  const asset = res.assets[0]!;
+  const uri = await compress(asset.uri, asset.width);
+  return { purpose: purpose as CameraPurpose, photo: toLocalPhoto(keepForUpload(uri), 0) };
 }
 
 /**

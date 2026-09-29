@@ -96,4 +96,8 @@ export const Keys = {
   seenSos: (userId: number) => `mcr.seen-sos.${userId}`,
   queryCache: 'mcr.query-cache.v1',
   localDb: 'mcr.localdb.v1',
+  /** What the Android camera was opened for, to finish the job if the app is restarted meanwhile. */
+  cameraPurpose: 'mcr.camera-purpose',
+  cart: (userId: number) => `mcr.cart.${userId}`,
+  shopAddress: (userId: number) => `mcr.shop.address.${userId}`,
 } as const;

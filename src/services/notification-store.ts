@@ -51,6 +51,8 @@ export function describeEvent(event: RealtimeEvent, p: RealtimePayload): { title
       return { title: 'Job complete', body: s('summary') || 'Your receipt is ready.' };
     case 'mechanic_approved':
       return { title: "You're verified", body: 'Go online to start receiving jobs.' };
+    case 'order_update':
+      return { title: `Shop order #${String(p.orderId ?? '')}`, body: s('summary') || 'Your order was updated.' };
     default:
       return null;
   }
@@ -70,6 +72,7 @@ export async function addNotification(userId: number, event: RealtimeEvent, payl
     body: text.body,
     jobId: typeof payload.jobId === 'number' ? payload.jobId : undefined,
     quoteId: typeof payload.quoteId === 'number' ? payload.quoteId : undefined,
+    orderId: typeof payload.orderId === 'number' ? payload.orderId : undefined,
     createdAt: new Date().toISOString(),
     read: false,
   };

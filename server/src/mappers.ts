@@ -1,8 +1,8 @@
 // Column → API field mapping rules (§5.1): snake_case → camelCase, CSV photo columns → absolute URL arrays,
 // DECIMAL → number, TIMESTAMP → ISO-8601, password never returned, tri-state is_approved kept.
-import type { ChecklistItem, Job, PartsQuote, Review, User, Vehicle } from '@/models';
+import type { ChecklistItem, Job, Order, OrderItem, PartsQuote, Product, Review, User, Vehicle } from '@/models';
 
-import type { ChecklistRow, JobRow, QuoteRow, ReviewRow, UserRow, VehicleRow } from './types';
+import type { ChecklistRow, JobRow, OrderItemRow, OrderRow, ProductRow, QuoteRow, ReviewRow, UserRow, VehicleRow } from './types';
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -113,5 +113,50 @@ export function toReview(r: ReviewRow): Review {
     rating: Math.min(5, Math.max(1, r.rating)) as Review['rating'],
     feedback: r.feedback,
     createdAt: r.created_at.toISOString(),
+  };
+}
+
+/** A shop product for the app (photo paths become absolute URLs). */
+export function toProduct(base: string, r: ProductRow): Product {
+  return {
+    id: r.id,
+    name: r.name,
+    category: r.category as Product['category'],
+    brand: r.brand,
+    partNumber: r.part_number,
+    description: r.description,
+    compatibleWith: r.compatible_with,
+    price: Number(r.price),
+    stock: r.stock,
+    warrantyMonths: r.warranty_months,
+    photos: splitPhotos(base, r.photos),
+    createdAt: r.created_at.toISOString(),
+  };
+}
+
+/** A shop order with its lines (each line shows the product's first photo, if the product still exists). */
+export function toOrder(base: string, r: OrderRow, items: OrderItemRow[]): Order {
+  return {
+    id: r.id,
+    status: r.status as Order['status'],
+    fulfilment: r.fulfilment as Order['fulfilment'],
+    paymentMethod: r.payment_method as Order['paymentMethod'],
+    deliveryAddress: r.delivery_address,
+    contactPhone: r.contact_phone,
+    note: r.note,
+    items: items.map(
+      (i): OrderItem => ({
+        productId: i.product_id,
+        name: i.name,
+        unitPrice: Number(i.unit_price),
+        quantity: i.quantity,
+        photo: splitPhotos(base, i.photos ?? null)[0] ?? null,
+      }),
+    ),
+    subtotal: Number(r.subtotal),
+    deliveryFee: Number(r.delivery_fee),
+    total: Number(r.total),
+    createdAt: r.created_at.toISOString(),
+    updatedAt: r.updated_at.toISOString(),
   };
 }

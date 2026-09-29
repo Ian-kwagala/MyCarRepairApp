@@ -1,3 +1,4 @@
+// The Express app: security middleware, the /api/v1 routes, photos, receipts and the /admin console.
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
@@ -11,9 +12,8 @@ import { authRouter } from './routes/auth';
 import { jobsRouter } from './routes/jobs';
 import { mechanicRouter } from './routes/mechanic';
 import { meRouter } from './routes/me';
+import { shopRouter } from './routes/shop';
 import { vehiclesRouter } from './routes/vehicles';
-
-// The Express app: security middleware, the /api/v1 routes, photos, receipts and the /admin console.
 
 /** Builds the Express app (index.ts adds the HTTP server and Socket.io; the tests reuse it). */
 export function createApp() {
@@ -36,6 +36,7 @@ export function createApp() {
   v1.use(meRouter);
   v1.use('/vehicles', vehiclesRouter);
   v1.use('/mechanic', mechanicRouter);
+  v1.use('/shop', shopRouter);
   v1.use(jobsRouter);
   v1.use((_req, res) => {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No such endpoint.' } });

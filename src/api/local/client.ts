@@ -25,7 +25,9 @@ import type {
   Job,
   LocalPhoto,
   MechanicStats,
+  Order,
   PartsQuote,
+  Product,
   RealtimePayload,
   Review,
   User,
@@ -48,6 +50,8 @@ import type {
   LoginInput,
   MechanicReview,
   MechanicTab,
+  PlaceOrderInput,
+  ProductQuery,
   ProfilePatch,
   QuoteInput,
   RegisterInput,
@@ -1068,6 +1072,46 @@ export class LocalApiClient implements ApiClient {
         }));
       return { reviews, average: mechanicRating(db, u.id), count: reviews.length };
     });
+  }
+
+  // ─── Shop ──────────────────────────────────────────────────────────────────────
+  // The catalogue is managed in the server's /admin console, so local data mode has no products: the Shop shows
+  // its empty state and checkout explains that it needs the server.
+
+  /** No catalogue offline: always empty. */
+  async listProducts(_query: ProductQuery): Promise<Product[]> {
+    return read((db) => {
+      this.requireRole(db, 'owner');
+      return [];
+    });
+  }
+
+  /** No catalogue offline. */
+  async getProduct(_id: number): Promise<Product> {
+    throw Errors.notFound('Product');
+  }
+
+  /** Ordering needs the server (stock and prices live there). */
+  async placeOrder(_input: PlaceOrderInput): Promise<Order> {
+    throw new ApiError('SHOP_OFFLINE', 'The shop needs a connection to MyCarRepair. This test version runs without the server.', 503);
+  }
+
+  /** No orders offline. */
+  async myOrders(): Promise<Order[]> {
+    return read((db) => {
+      this.requireRole(db, 'owner');
+      return [];
+    });
+  }
+
+  /** No orders offline. */
+  async getOrder(_id: number): Promise<Order> {
+    throw Errors.notFound('Order');
+  }
+
+  /** No orders offline. */
+  async cancelOrder(_id: number): Promise<Order> {
+    throw Errors.notFound('Order');
   }
 
   // ─── Local-mode stand-in for the web admin portal ───────────────────────────

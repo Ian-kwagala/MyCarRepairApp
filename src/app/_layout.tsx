@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ToastHost } from '@/components';
 import { LockScreen, MaintenanceScreen } from '@/features/app-gates';
+import { CameraRecovery } from '@/features/camera-recovery';
 import { RealtimeBridge } from '@/features/realtime-bridge';
 import { useConfig } from '@/hooks/queries';
 import { cleanOldPendingPhotos } from '@/services/media';
@@ -72,6 +73,7 @@ export default function RootLayout() {
           <ThemeProvider value={navTheme}>
             <Gate />
             <RealtimeBridge />
+            <CameraRecovery />
             <ToastHost />
           </ThemeProvider>
         </SafeAreaProvider>

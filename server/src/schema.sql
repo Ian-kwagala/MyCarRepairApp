@@ -147,3 +147,59 @@ CREATE TABLE IF NOT EXISTS password_resets (
   attempts INT NOT NULL DEFAULT 0,
   expires_at TIMESTAMP NOT NULL
 );
+
+-- ── Shop (marketplace): genuine spare parts and accessories sold by MyCarRepair ──────────────────────────
+-- Additive tables; products are managed in /admin, orders placed by owners in the app.
+
+CREATE TABLE IF NOT EXISTS products (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  category VARCHAR(20) NOT NULL CHECK (category IN ('parts', 'accessories', 'tyres', 'batteries', 'fluids', 'electronics')),
+  brand VARCHAR(60),
+  part_number VARCHAR(60),
+  description TEXT,
+  -- Free text, e.g. "Toyota Premio 2007–2016"; empty means it fits any car.
+  compatible_with TEXT,
+  price DECIMAL(12, 2) NOT NULL CHECK (price >= 0),
+  stock INT NOT NULL DEFAULT 0 CHECK (stock >= 0),
+  warranty_months INT CHECK (warranty_months >= 0),
+  -- Comma-separated media/<key> paths, like vehicles.photos.
+  photos TEXT,
+  -- Hidden products stay in old orders but no longer show in the shop.
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS products_active_category_idx ON products (is_active, category);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id SERIAL PRIMARY KEY,
+  owner_id INT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'placed'
+    CHECK (status IN ('placed', 'confirmed', 'out_for_delivery', 'ready_for_pickup', 'delivered', 'cancelled')),
+  fulfilment VARCHAR(10) NOT NULL CHECK (fulfilment IN ('delivery', 'pickup')),
+  payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('cash', 'mobile_money')),
+  delivery_address TEXT,
+  delivery_lat DECIMAL(9, 6),
+  delivery_lng DECIMAL(9, 6),
+  contact_phone VARCHAR(20) NOT NULL,
+  note TEXT,
+  subtotal DECIMAL(12, 2) NOT NULL,
+  delivery_fee DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  total DECIMAL(12, 2) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS orders_owner_idx ON orders (owner_id);
+CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status);
+
+-- Lines keep the name and price at the time of ordering, so later price changes don't rewrite history.
+CREATE TABLE IF NOT EXISTS order_items (
+  id SERIAL PRIMARY KEY,
+  order_id INT NOT NULL REFERENCES orders (id) ON DELETE CASCADE,
+  product_id INT REFERENCES products (id) ON DELETE SET NULL,
+  name VARCHAR(120) NOT NULL,
+  unit_price DECIMAL(12, 2) NOT NULL,
+  quantity INT NOT NULL CHECK (quantity > 0)
+);
+CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);

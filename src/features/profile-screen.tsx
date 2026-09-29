@@ -1,5 +1,6 @@
+// Shared Profile tab, used by both the owner and mechanic apps.
 import { router } from 'expo-router';
-import { Bell, Car, ChevronRight, LifeBuoy, LogOut, Pencil, Settings, Star, Wrench } from '@/components/icons';
+import { Bell, Car, ChevronRight, LifeBuoy, LogOut, Pencil, ReceiptText, Settings, Star, Wrench } from '@/components/icons';
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
 
@@ -12,7 +13,6 @@ import { Space, useColors } from '@/theme';
 import { confirm } from '@/utils/confirm';
 import { formatDate } from '@/utils/format';
 
-// Shared Profile tab, used by both the owner and mechanic apps.
 
 /**
  * Profile tab for both roles: account, notifications, settings, help, sign out (logout lives here, §10.1).
@@ -63,7 +63,10 @@ export function ProfileScreen({ children }: { children?: ReactNode }) {
 
       <Card style={{ paddingVertical: Space.xs }}>
         {mechanic ? null : (
-          <ListRow icon={Car} title="My garage" subtitle="Your cars, photos and service reminders" onPress={() => router.push('/garage')} right={chevron} />
+          <>
+            <ListRow icon={Car} title="My garage" subtitle="Your cars, photos and service reminders" onPress={() => router.push('/garage')} right={chevron} />
+            <ListRow icon={ReceiptText} title="My shop orders" subtitle="Parts and accessories you ordered" onPress={() => router.push('/shop/orders')} right={chevron} />
+          </>
         )}
         <ListRow icon={Pencil} title="Edit profile" subtitle={mechanic ? 'Name, phone, garage & expertise' : 'Name and phone'} onPress={() => router.push('/account/edit')} right={chevron} />
         <ListRow

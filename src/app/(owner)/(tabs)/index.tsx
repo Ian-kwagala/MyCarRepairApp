@@ -1,6 +1,7 @@
+// Owner Home tab: SOS, service shortcuts, the shop, repairs in progress and the garage preview.
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { Bell, CalendarDays, ChevronRight, MapPin, Plus, Siren, Stethoscope } from '@/components/icons';
+import { Bell, CalendarDays, ChevronRight, MapPin, Plus, ShoppingBag, Siren, Stethoscope } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -30,7 +31,6 @@ import { Brand, Radius, Space, useColors } from '@/theme';
 import { greeting } from '@/utils/format';
 import { pendingQuotes, progress, statusLabel, statusTone } from '@/utils/jobs';
 
-// Owner Home tab.
 
 /** O1 Owner home — fastest path to SOS (1 tap), services, active repair, garage. */
 export default function OwnerHome() {
@@ -128,6 +128,22 @@ export default function OwnerHome() {
         <ServiceCard icon={CalendarDays} title="Book Service" sub="Oil, brakes" onPress={needCar('/book')} />
         <ServiceCard icon={Stethoscope} title="Diagnostics" sub="Symptoms" onPress={needCar('/diagnostics')} />
       </Row>
+
+      {/* Shop entry: no car needed to browse, so it opens straight away. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Shop genuine spare parts and accessories"
+        onPress={() => router.push('/shop')}
+        style={({ pressed }) => [styles.shop, { backgroundColor: c.surface, borderColor: c.border, opacity: pressed ? 0.85 : 1 }]}>
+        <View style={[styles.serviceIcon, { backgroundColor: c.primarySoft, marginBottom: 0 }]}>
+          <ShoppingBag size={24} color={Brand.orange} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text variant="bodyStrong">Shop parts & accessories</Text>
+          <Text variant="caption">Genuine, delivered or ready for pickup</Text>
+        </View>
+        <ChevronRight size={20} color={c.textMuted} />
+      </Pressable>
 
       {locGranted === false ? (
         <InlineNotice tone="info" icon={MapPin}>
@@ -248,6 +264,7 @@ const styles = StyleSheet.create({
   },
   sosIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   service: { flex: 1, borderRadius: Radius.card, borderWidth: StyleSheet.hairlineWidth, padding: Space.lg, gap: 4, minHeight: 120 },
+  shop: { flexDirection: 'row', alignItems: 'center', gap: Space.md, borderRadius: Radius.card, borderWidth: StyleSheet.hairlineWidth, padding: Space.lg },
   serviceIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: Space.sm },
   quoteBar: { position: 'absolute', left: 0, top: 16, bottom: 16, width: 4, borderRadius: 2 },
 });

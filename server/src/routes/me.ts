@@ -1,3 +1,4 @@
+// Signed-in user API: app config (fees, services, shop settings), profile, live location and push-device registration.
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -22,6 +23,9 @@ meRouter.get('/config', async (_req, res) => {
     maintenance: get('maintenance_mode') === 'true',
     minAppVersion: get('min_app_version') ?? DEFAULT_CONFIG.minAppVersion,
     supportPhone: get('support_phone') ?? DEFAULT_CONFIG.supportPhone,
+    // Shop: delivery fee (UGX) and where pickup orders are collected, both set in /admin → Settings.
+    deliveryFee: get('delivery_fee') !== undefined && Number(get('delivery_fee')) >= 0 ? Number(get('delivery_fee')) : DEFAULT_CONFIG.deliveryFee,
+    pickupLocation: get('pickup_location') || DEFAULT_CONFIG.pickupLocation,
   });
 });
 

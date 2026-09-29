@@ -1,3 +1,4 @@
+// Admin console page kit: the page frame with side navigation, notices, pills, tables and the shared CSS.
 import { SOS_ISSUES } from '@/constants/config';
 
 import { ICONS, type IconName } from './icons';
@@ -119,6 +120,11 @@ export const NOTICES: Record<string, string> = {
   'maintenance-on': 'Maintenance mode is on: the apps now show a maintenance screen.',
   'maintenance-off': 'Maintenance mode is off: the apps work normally again.',
   'push-sent': 'Test notification sent. It should appear on their phone within a few seconds.',
+  'product-created': 'Product added. Owners can see it in the Shop now.',
+  'product-saved': 'Product saved.',
+  'product-hidden': 'Product hidden from the Shop. Past orders keep it.',
+  'product-shown': 'Product is back in the Shop.',
+  'order-updated': 'Order updated. The owner has been notified.',
 };
 
 /** Badge counts for the sidebar. */
@@ -126,6 +132,8 @@ export interface NavCounts {
   pending: number;
   resets: number;
   openSos: number;
+  /** Shop orders waiting to be confirmed. */
+  orders: number;
 }
 
 const NAV: { href: string; label: string; icon: IconName; badge?: keyof NavCounts }[] = [
@@ -134,6 +142,8 @@ const NAV: { href: string; label: string; icon: IconName; badge?: keyof NavCount
   { href: '/admin/jobs', label: 'Jobs', icon: 'clipboard-list', badge: 'openSos' },
   { href: '/admin/owners', label: 'Car owners', icon: 'car' },
   { href: '/admin/mechanics', label: 'Mechanics', icon: 'wrench' },
+  { href: '/admin/shop/orders', label: 'Shop orders', icon: 'shopping-bag', badge: 'orders' },
+  { href: '/admin/shop/products', label: 'Shop products', icon: 'package' },
   { href: '/admin/resets', label: 'Password resets', icon: 'key-round', badge: 'resets' },
   { href: '/admin/settings', label: 'Settings', icon: 'settings' },
 ];
@@ -153,7 +163,7 @@ export function page(opts: {
 }) {
   const nav = NAV.map((n) => {
     const count = n.badge ? opts.counts[n.badge] : 0;
-    const badge = count ? `<span class="badge${n.badge === 'openSos' ? ' red' : ''}">${count}</span>` : '';
+    const badge = count ? `<span class="badge${n.badge === 'openSos' || n.badge === 'orders' ? ' red' : ''}">${count}</span>` : '';
     return `<a href="${n.href}" class="nav${opts.active === n.href ? ' on' : ''}"${opts.active === n.href ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span>${badge}</a>`;
   }).join('');
   const notice = opts.notice && NOTICES[opts.notice] ? `<div class="notice" role="status">${icon('circle-check')}${esc(NOTICES[opts.notice])}</div>` : '';
@@ -311,13 +321,20 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:8px 20px;margin:0}d
 .check{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line2)}.check:last-child{border-bottom:0}
 .box{width:18px;height:18px;border-radius:5px;border:2px solid #cbd5e1;flex:none}.box.done{background:#16a34a;border-color:#16a34a}
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}.field label{font-weight:600}
-.field input{border:1px solid var(--line);border-radius:8px;padding:9px 12px;font:inherit;max-width:360px}
+.field input,.field select,.field textarea{border:1px solid var(--line);border-radius:8px;padding:9px 12px;font:inherit;max-width:360px;background:#fff;color:var(--ink)}
+.field textarea{max-width:none;min-height:96px;resize:vertical}.field input[type=file]{border-style:dashed;max-width:none}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}.form-grid .wide{grid-column:1/-1}
+.form-error{background:var(--red-soft);color:var(--red);border:1px solid #f3c4c4;padding:10px 14px;border-radius:10px;margin-bottom:14px;font-weight:500}
+.thumbs{display:flex;gap:10px;flex-wrap:wrap}.thumbs label{display:flex;flex-direction:column;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
+.thumbs img{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.pthumb{width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:none;background:var(--gray-soft)}
 .hint{font-size:12px;color:var(--muted)}
 .stars{color:#f59e0b;letter-spacing:1px}
 .chart{width:100%;height:auto;display:block}.chart path{fill:var(--orange)}.chart .col:hover path{fill:var(--orange-ink)}
 .chart .base{stroke:var(--line);stroke-width:1}.chart .tick{fill:var(--muted);font-size:11px}.chart .val{fill:var(--ink);font-size:12px;font-weight:600}
 .table-view{margin-top:8px}.table-view summary{cursor:pointer;color:var(--muted);font-size:12px}.table-view .t{margin-top:8px}
 @media (max-width:1000px){.grid2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:700px){.form-grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:860px){.shell{grid-template-columns:minmax(0,1fr);background:none}.side{position:static;height:auto;padding:12px}
 nav{flex-direction:row;overflow-x:auto;gap:4px}.nav{white-space:nowrap}.nav.on{box-shadow:inset 0 -3px 0 var(--orange)}.side-foot{display:none}
 .main{padding:20px 16px 40px}.tiles,.tiles.compact{grid-template-columns:repeat(2,minmax(0,1fr))}.tile .value{font-size:22px}.search{min-width:0;flex:1}.approval{grid-template-columns:1fr}.actions{justify-content:flex-start}}

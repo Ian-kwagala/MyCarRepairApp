@@ -72,4 +72,19 @@ export const DEFAULT_CONFIG: AppConfig = {
   maintenance: false,
   minAppVersion: '1.0.0',
   supportPhone: '+256700000000',
+  deliveryFee: 10_000,
+  pickupLocation: 'MyCarRepair, Kampala',
 };
+
+/** Shop sections, in display order, with their labels. */
+export const PRODUCT_CATEGORIES = [
+  { key: 'parts', label: 'Spare parts' },
+  { key: 'tyres', label: 'Tyres' },
+  { key: 'batteries', label: 'Batteries' },
+  { key: 'fluids', label: 'Oils & fluids' },
+  { key: 'accessories', label: 'Accessories' },
+  { key: 'electronics', label: 'Electronics' },
+] as const;
+
+/** Most of one product a single order can hold (keeps stock fair and orders sane). */
+export const MAX_ORDER_QUANTITY = 20;

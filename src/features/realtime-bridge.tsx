@@ -1,3 +1,5 @@
+// Connects live server events to the UI: refreshes data, shows toasts and system notifications, and
+// opens the right screen when a notification is tapped.
 import * as Notifications from 'expo-notifications';
 import { router, type Href } from 'expo-router';
 import { useEffect, useRef } from 'react';
@@ -13,17 +15,16 @@ import { usePrefs } from '@/store/prefs';
 import { useSession } from '@/store/session';
 import { toast } from '@/store/toast';
 
-// Connects live server events to the UI: refreshes data, shows toasts and system notifications, and
-// opens the right screen when a notification is tapped.
-
 // Notification taps only exist on phones; expo-notifications throws on web, so the web preview gets a stub. The
 // choice is fixed per platform, so the hook is still called unconditionally on every render.
 const useLastNotificationTap: () => Notifications.NotificationResponse | null | undefined =
   Platform.OS === 'web' ? () => null : Notifications.useLastNotificationResponse;
 
 /** Deep-link target for an event (§8): the screen to open when the user taps its toast or notification. */
-export function linkFor(role: 'owner' | 'mechanic' | 'admin', event: RealtimeEvent, p: { jobId?: number; quoteId?: number }): Href | null {
+export function linkFor(role: 'owner' | 'mechanic' | 'admin', event: RealtimeEvent, p: { jobId?: number; quoteId?: number; orderId?: number }): Href | null {
   if (event === 'mechanic_approved') return '/mechanic';
+  // Shop orders belong to car owners only.
+  if (event === 'order_update') return role === 'owner' && p.orderId ? `/shop/orders/${p.orderId}` : null;
   if (!p.jobId) return null;
   if (role === 'mechanic') return `/mechanic/job/${p.jobId}`;
   if (event === 'new_quote_alert' && p.quoteId) return `/quote/${p.quoteId}`;
@@ -41,6 +42,7 @@ const TOAST_EVENTS: RealtimeEvent[] = [
   'appointment_update',
   'job_finished',
   'mechanic_approved',
+  'order_update',
 ];
 
 /** Marks cached data affected by an event as out of date so screens refetch it. */
@@ -50,6 +52,11 @@ function invalidateFor(event: RealtimeEvent, p: RealtimePayload) {
     queryClient.setQueryData<Job>(qk.job(p.jobId), (j) =>
       j?.mechanic ? { ...j, mechanic: { ...j.mechanic, locationLat: p.lat as number, locationLng: p.lng as number } } : j,
     );
+    return;
+  }
+  // Shop order status changed (by MyCarRepair staff): refresh the order and the owner's order list.
+  if (event === 'order_update') {
+    void queryClient.invalidateQueries({ queryKey: ['shop'] });
     return;
   }
   // Anything else: refresh the job itself plus every list that might show it.
@@ -87,7 +94,12 @@ export function RealtimeBridge() {
         toast({
           title: text.title,
           body: text.body,
-          tone: event === 'job_finished' || event === 'mechanic_approved' ? 'success' : event === 'new_quote_alert' ? 'warning' : 'info',
+          tone:
+            event === 'job_finished' || event === 'mechanic_approved' || (event === 'order_update' && payload.status === 'delivered')
+              ? 'success'
+              : event === 'new_quote_alert'
+                ? 'warning'
+                : 'info',
           onPress: href ? () => router.push(href) : undefined,
         });
         void presentIfBackground(text.title, text.body, { url: href ?? undefined });

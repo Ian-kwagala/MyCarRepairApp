@@ -413,16 +413,18 @@ describe('admin console', () => {
   });
 
   test('settings reach the apps through /config', async () => {
-    assert.equal((await post('/settings', { support_phone: 'call me', min_app_version: '1.0.0' })).headers.get('location'), '/admin/settings?error=phone');
-    assert.equal((await post('/settings', { support_phone: '+256 772 123456', min_app_version: '1.2.0' })).status, 303);
+    assert.equal((await post('/settings', { support_phone: 'call me', min_app_version: '1.0.0', delivery_fee: '10000', pickup_location: 'MyCarRepair, Wandegeya' })).headers.get('location'), '/admin/settings?error=phone');
+    assert.equal((await post('/settings', { support_phone: '+256 772 123456', min_app_version: '1.2.0', delivery_fee: '12,000', pickup_location: 'MyCarRepair, Wandegeya' })).status, 303);
     assert.equal((await post('/settings/maintenance', { mode: 'on' })).status, 303);
     let cfg = (await call('GET', '/config')).json;
     assert.equal(cfg.supportPhone, '+256 772 123456');
     assert.equal(cfg.minAppVersion, '1.2.0');
+    assert.equal(cfg.deliveryFee, 12000);
+    assert.equal(cfg.pickupLocation, 'MyCarRepair, Wandegeya');
     assert.equal(cfg.maintenance, true);
     assert.ok((await get('/')).html.includes('Maintenance mode is on'));
     await post('/settings/maintenance', { mode: 'off' });
-    await post('/settings', { support_phone: '+256700000000', min_app_version: '1.0.0' });
+    await post('/settings', { support_phone: '+256700000000', min_app_version: '1.0.0', delivery_fee: '10000', pickup_location: 'MyCarRepair, Kampala' });
     cfg = (await call('GET', '/config')).json;
     assert.equal(cfg.maintenance, false);
   });
@@ -477,5 +479,122 @@ describe('push notifications (FCM)', () => {
     await eventually(() => fcmCalls.some((c) => c.message.token === 'fcm-owner-phone' && c.message.data.title === 'Test from MyCarRepair'), 'test push');
     const page = await (await fetch(`${base}/admin/settings`, { headers: { Authorization: `Basic ${Buffer.from('staff:admin-test').toString('base64')}` } })).text();
     assert.ok(page.includes('Phones get SOS alerts'), 'settings show push as on');
+  });
+});
+
+describe('shop (marketplace)', () => {
+  const auth = { Authorization: `Basic ${Buffer.from('staff:admin-test').toString('base64')}`, 'Sec-Fetch-Site': 'same-origin' };
+  /** Adds a product through the admin form (multipart, like the browser), returns its id. */
+  async function addProduct(fields: Record<string, string>, withPhoto = true) {
+    const form = new FormData();
+    for (const [k, v] of Object.entries({ category: 'parts', brand: '', part_number: '', warranty_months: '', compatible_with: '', description: '', ...fields })) form.append(k, v);
+    if (withPhoto) form.append('photos', new Blob([PNG], { type: 'image/png' }), 'part.png');
+    const res = await fetch(`${base}/admin/shop/products`, { method: 'POST', redirect: 'manual', headers: auth, body: form });
+    return { status: res.status, id: Number(res.headers.get('location')?.match(/products\/(\d+)/)?.[1]) };
+  }
+  const staffSets = (orderId: number, next: string) =>
+    fetch(`${base}/admin/shop/orders/${orderId}/status`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { ...auth, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ next, back: `/admin/shop/orders/${orderId}` }),
+    });
+  const stockOf = async (id: number) => (await pool.query(`SELECT stock FROM products WHERE id = $1`, [id])).rows[0].stock as number;
+
+  test('admin adds products; owners browse, search and filter by their car', async () => {
+    assert.equal((await addProduct({ name: 'No photo', price: '1000', stock: '1' }, false)).status, 400, 'a photo is required');
+    assert.equal((await addProduct({ name: 'Bad price', price: 'cheap', stock: '1' })).status, 400);
+    const pads = await addProduct({ name: 'Brake pads (front)', brand: 'Toyota Genuine', part_number: '04465-12592', price: '85,000', stock: '5', compatible_with: 'Toyota Premio, Toyota Allion', warranty_months: '6' });
+    assert.equal(pads.status, 303);
+    await addProduct({ name: 'Phone holder', category: 'accessories', price: '25000', stock: '10' });
+    await addProduct({ name: 'Subaru air filter', price: '40000', stock: '3', compatible_with: 'Subaru Forester' });
+
+    const owner = await ownerWithCar('shop-browse@x.ug'); // a Subaru Forester
+    const all = await call('GET', '/shop/products', { token: owner.accessToken });
+    assert.equal(all.status, 200);
+    const p = all.json.find((x: Json) => x.id === pads.id);
+    assert.equal(p.price, 85000);
+    assert.equal(p.warrantyMonths, 6);
+    assert.match(p.photos[0], /\/media\/[a-f0-9]{32}\.png$/);
+    assert.deepEqual((await call('GET', '/shop/products?category=accessories', { token: owner.accessToken })).json.map((x: Json) => x.name), ['Phone holder']);
+    assert.deepEqual((await call('GET', '/shop/products?q=04465', { token: owner.accessToken })).json.map((x: Json) => x.id), [pads.id]);
+    const fits = (await call('GET', `/shop/products?vehicleId=${owner.vehicleId}`, { token: owner.accessToken })).json.map((x: Json) => x.name).sort();
+    assert.deepEqual(fits, ['Phone holder', 'Subaru air filter'], 'Forester: its own parts plus universal ones, not Toyota pads');
+    const m = await register('mechanic', 'shop-mech@x.ug', { garageName: 'G', garageLocation: 'L' });
+    assert.equal((await call('GET', '/shop/products', { token: m.accessToken })).status, 403, 'the shop is for owners');
+
+    for (const path of ['/shop/products', `/shop/products/${pads.id}`, '/shop/products/new', '/shop/orders']) {
+      const r = await fetch(`${base}/admin${path}`, { headers: auth });
+      assert.equal(r.status, 200, path);
+    }
+  });
+
+  test('orders use server prices, take stock atomically, and follow the status flow live', async () => {
+    const tyre = (await addProduct({ name: 'Tyre 195/65 R15', category: 'tyres', price: '210000', stock: '2' })).id;
+    const owner = await ownerWithCar('shop-buyer@x.ug');
+    const other = await ownerWithCar('shop-other@x.ug');
+    const live = await listen(owner.accessToken);
+
+    const bad = await call('POST', '/shop/orders', { token: owner.accessToken, body: { items: [{ productId: tyre, quantity: 1 }], fulfilment: 'delivery', paymentMethod: 'cash', contactPhone: '0772000000' } });
+    assert.equal(bad.status, 400, 'delivery needs an address');
+    const tooMany = await call('POST', '/shop/orders', { token: owner.accessToken, body: { items: [{ productId: tyre, quantity: 3 }], fulfilment: 'pickup', paymentMethod: 'cash', contactPhone: '0772000000' } });
+    assert.equal(tooMany.status, 409);
+    assert.equal(tooMany.json.error.code, 'OUT_OF_STOCK');
+    assert.equal(await stockOf(tyre), 2, 'a failed order takes nothing');
+
+    const placed = await call('POST', '/shop/orders', {
+      token: owner.accessToken,
+      body: { items: [{ productId: tyre, quantity: 1, price: 1 }], fulfilment: 'delivery', paymentMethod: 'mobile_money', deliveryAddress: 'Plot 5, Ntinda Road', contactPhone: '0772000000', lat: 0.35, lng: 32.61 },
+    });
+    assert.equal(placed.status, 201, JSON.stringify(placed.json));
+    assert.equal(placed.json.subtotal, 210000, 'the price comes from the database, not the app');
+    assert.equal(placed.json.deliveryFee, 10000);
+    assert.equal(placed.json.total, 220000);
+    assert.equal(placed.json.status, 'placed');
+    assert.equal(await stockOf(tyre), 1);
+
+    // Two owners race for the last tyre: exactly one gets it.
+    const race = await Promise.all(
+      [owner, other].map((o) => call('POST', '/shop/orders', { token: o.accessToken, body: { items: [{ productId: tyre, quantity: 1 }], fulfilment: 'pickup', paymentMethod: 'cash', contactPhone: '0772000001' } })),
+    );
+    assert.deepEqual(race.map((r) => r.status).sort(), [201, 409]);
+    assert.equal(await stockOf(tyre), 0);
+    const won = race.find((r) => r.status === 201)!.json;
+    assert.equal(won.deliveryFee, 0, 'pickup is free');
+
+    // Owners only see their own orders.
+    assert.equal((await call('GET', `/shop/orders/${placed.json.id}`, { token: other.accessToken })).status, 404);
+    assert.equal((await call('POST', `/shop/orders/${placed.json.id}/cancel`, { token: other.accessToken })).status, 404);
+    assert.ok((await call('GET', '/shop/orders', { token: owner.accessToken })).json.some((o: Json) => o.id === placed.json.id));
+
+    // Staff: confirm → on the way → delivered; each step reaches the owner live.
+    assert.equal((await staffSets(placed.json.id, 'delivered')).headers.get('location'), `/admin/shop/orders/${placed.json.id}`, 'skipping steps is refused');
+    for (const next of ['confirmed', 'out_for_delivery', 'delivered']) {
+      const r = await staffSets(placed.json.id, next);
+      assert.equal(r.headers.get('location'), `/admin/shop/orders/${placed.json.id}?notice=order-updated`, next);
+      await eventually(() => live.events.some((e) => e.event === 'order_update' && e.payload.status === next), `order_update ${next}`);
+    }
+    assert.equal((await call('GET', `/shop/orders/${placed.json.id}`, { token: owner.accessToken })).json.status, 'delivered');
+    assert.equal((await call('POST', `/shop/orders/${placed.json.id}/cancel`, { token: owner.accessToken })).status, 409, 'too late to cancel');
+    const detail = await fetch(`${base}/admin/shop/orders/${placed.json.id}`, { headers: auth });
+    assert.equal(detail.status, 200);
+    assert.ok((await detail.text()).includes('Plot 5, Ntinda Road'));
+  });
+
+  test('owners cancel a placed order and the stock goes back', async () => {
+    const oil = (await addProduct({ name: 'Engine oil 5W-30 (4 L)', category: 'fluids', price: '120000', stock: '4' })).id;
+    const owner = await ownerWithCar('shop-cancel@x.ug');
+    const o = await call('POST', '/shop/orders', { token: owner.accessToken, body: { items: [{ productId: oil, quantity: 3 }], fulfilment: 'pickup', paymentMethod: 'cash', contactPhone: '0772000002' } });
+    assert.equal(await stockOf(oil), 1);
+    const cancelled = await call('POST', `/shop/orders/${o.json.id}/cancel`, { token: owner.accessToken });
+    assert.equal(cancelled.status, 200);
+    assert.equal(cancelled.json.status, 'cancelled');
+    assert.equal(await stockOf(oil), 4);
+
+    // Hidden products can't be bought.
+    await fetch(`${base}/admin/shop/products/${oil}/visibility`, { method: 'POST', redirect: 'manual', headers: { ...auth, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'back=/admin/shop/products' });
+    assert.equal((await call('GET', `/shop/products/${oil}`, { token: owner.accessToken })).status, 404);
+    const hidden = await call('POST', '/shop/orders', { token: owner.accessToken, body: { items: [{ productId: oil, quantity: 1 }], fulfilment: 'pickup', paymentMethod: 'cash', contactPhone: '0772000002' } });
+    assert.equal(hidden.json.error.code, 'PRODUCT_UNAVAILABLE');
   });
 });

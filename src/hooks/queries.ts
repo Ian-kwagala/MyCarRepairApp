@@ -1,11 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
-
-import { api, type EarningsRange, type JobScope, type MechanicTab } from '@/api';
-import { DEFAULT_CONFIG } from '@/constants/config';
-import { useUser } from '@/store/session';
-
 // Data-fetching hooks: one TanStack Query hook per API read, with caching, background refresh and
 // offline support handled by the shared query client.
+import { useQuery } from '@tanstack/react-query';
+
+import { api, type EarningsRange, type JobScope, type MechanicTab, type ProductQuery } from '@/api';
+import { DEFAULT_CONFIG } from '@/constants/config';
+import { useUser } from '@/store/session';
 
 /** Cache keys for every query, so mutations and realtime events can refresh exactly the right data. */
 export const qk = {
@@ -19,6 +18,10 @@ export const qk = {
   mechanicStats: ['mechanic', 'stats'] as const,
   earnings: (range: EarningsRange) => ['mechanic', 'earnings', range] as const,
   reviews: ['mechanic', 'reviews'] as const,
+  products: (query: ProductQuery) => ['shop', 'products', query] as const,
+  product: (id: number) => ['shop', 'product', id] as const,
+  orders: ['shop', 'orders'] as const,
+  order: (id: number) => ['shop', 'orders', id] as const,
 };
 
 /** App settings from the server, refreshed hourly. Returns the defaults until loaded, so it's never empty. */
@@ -86,4 +89,34 @@ export function useEarnings(range: EarningsRange) {
 /** Reviews the mechanic has received. */
 export function useMyReviews() {
   return useQuery({ queryKey: qk.reviews, queryFn: () => api.myReviews() });
+}
+
+/** Shop products for a section/search/car filter (owners only). Kept fresh for a minute: stock changes. */
+export function useProducts(query: ProductQuery) {
+  const user = useUser();
+  return useQuery({ queryKey: qk.products(query), queryFn: () => api.listProducts(query), enabled: user?.role === 'owner', staleTime: 60_000 });
+}
+
+/** One shop product. Waits until `id` is a valid number (e.g. parsed from the route). */
+export function useProduct(id: number) {
+  return useQuery({ queryKey: qk.product(id), queryFn: () => api.getProduct(id), enabled: Number.isFinite(id) });
+}
+
+/** The owner's shop orders, newest first; `live` re-polls every 20 s (status changes also arrive by socket). */
+export function useOrders(opts: { live?: boolean } = {}) {
+  const user = useUser();
+  return useQuery({ queryKey: qk.orders, queryFn: () => api.myOrders(), enabled: user?.role === 'owner', refetchInterval: opts.live ? 20_000 : false });
+}
+
+/** One shop order; `live` re-polls every 15 s until it's delivered or cancelled (nothing changes after that). */
+export function useOrder(id: number, opts: { live?: boolean } = {}) {
+  return useQuery({
+    queryKey: qk.order(id),
+    queryFn: () => api.getOrder(id),
+    enabled: Number.isFinite(id),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return opts.live && status !== 'delivered' && status !== 'cancelled' ? 15_000 : false;
+    },
+  });
 }

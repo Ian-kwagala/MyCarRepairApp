@@ -23,6 +23,7 @@ export const EVENTS: RealtimeEvent[] = [
   'appointment_update',
   'job_finished',
   'mechanic_approved',
+  'order_update',
 ];
 
 type AnyHandler = (event: RealtimeEvent, payload: RealtimePayload) => void;

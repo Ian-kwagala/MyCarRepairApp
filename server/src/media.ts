@@ -1,3 +1,4 @@
+// Photo uploads: multer limits, storing uploaded images in the database, serving them, and building their public URLs.
 import { randomBytes } from 'node:crypto';
 
 import type { Request, RequestHandler } from 'express';
@@ -22,8 +23,11 @@ function sniff(buf: Buffer): { mime: string; ext: string } | null {
   return null;
 }
 
-/** Stores uploaded photos and returns their "media/<key>" paths (what the photo columns hold). */
-export async function storeFiles(db: Db, ownerId: number, files: Express.Multer.File[] | undefined): Promise<string[]> {
+/**
+ * Stores uploaded photos and returns their "media/<key>" paths (what the photo columns hold). `ownerId` is the
+ * uploading user, or null for photos added by staff in /admin (shop products).
+ */
+export async function storeFiles(db: Db, ownerId: number | null, files: Express.Multer.File[] | undefined): Promise<string[]> {
   const paths: string[] = [];
   for (const f of files ?? []) {
     const type = sniff(f.buffer);

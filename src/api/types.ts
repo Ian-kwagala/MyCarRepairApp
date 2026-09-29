@@ -9,7 +9,12 @@ import type {
   Job,
   LocalPhoto,
   MechanicStats,
+  Order,
   PartsQuote,
+  PaymentMethod,
+  Fulfilment,
+  Product,
+  ProductCategory,
   RealtimeEvent,
   RealtimePayload,
   Review,
@@ -150,6 +155,25 @@ export interface ForgotPasswordResult {
 }
 
 /** The mobile API client — one method per §7 endpoint. */
+/** Shop filters: a section, a search term, and/or one of the owner's cars (shows parts that fit it). */
+export interface ProductQuery {
+  category?: ProductCategory;
+  q?: string;
+  vehicleId?: number;
+}
+
+/** A shop checkout. Only product ids and quantities are sent: the server prices the order itself. */
+export interface PlaceOrderInput {
+  items: { productId: number; quantity: number }[];
+  fulfilment: Fulfilment;
+  paymentMethod: PaymentMethod;
+  deliveryAddress?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  contactPhone: string;
+  note?: string | null;
+}
+
 export interface ApiClient {
   readonly mode: 'local' | 'remote';
 
@@ -200,6 +224,14 @@ export interface ApiClient {
   completeJob(jobId: number): Promise<Job>;
   earnings(range: EarningsRange): Promise<Earnings>;
   myReviews(): Promise<{ reviews: MechanicReview[]; average: number; count: number }>;
+
+  // Shop (owner)
+  listProducts(query: ProductQuery): Promise<Product[]>;
+  getProduct(id: number): Promise<Product>;
+  placeOrder(input: PlaceOrderInput): Promise<Order>;
+  myOrders(): Promise<Order[]>;
+  getOrder(id: number): Promise<Order>;
+  cancelOrder(id: number): Promise<Order>;
 }
 
 /** Callback for one realtime event. */

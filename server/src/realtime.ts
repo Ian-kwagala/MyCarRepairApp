@@ -1,3 +1,4 @@
+// Real-time events for the apps (Socket.io), with push notifications for users whose app isn't connected.
 import type { Server as HttpServer } from 'node:http';
 
 import { Server } from 'socket.io';
@@ -7,8 +8,6 @@ import type { RealtimeEvent, RealtimePayload } from '@/models';
 import { loadUser, verifyAccessToken } from './auth';
 import { config } from './config';
 import { sendPush } from './push';
-
-// Real-time events for the apps (Socket.io), with push notifications for users whose app isn't connected.
 
 let io: Server | null = null;
 const connected = new Map<number, number>(); // userId → open sockets
@@ -71,6 +70,8 @@ function pushText(event: RealtimeEvent, p: RealtimePayload): { title: string; bo
       return { title: 'Job complete', body: s('summary'), channel: 'jobs' };
     case 'mechanic_approved':
       return { title: "You're verified", body: 'Go online to start receiving jobs.', channel: 'jobs' };
+    case 'order_update':
+      return { title: `Shop order #${String(p.orderId ?? '')}`, body: s('summary'), channel: 'jobs' };
     default:
       return null; // task_update, mechanic_location, job_unavailable: in-app only
   }
@@ -79,6 +80,7 @@ function pushText(event: RealtimeEvent, p: RealtimePayload): { title: string; bo
 /** In-app route a push opens (same targets as the app's realtime bridge). */
 function deepLink(event: RealtimeEvent, p: RealtimePayload): string | undefined {
   if (event === 'mechanic_approved') return '/mechanic';
+  if (event === 'order_update' && p.orderId) return `/shop/orders/${p.orderId}`;
   if (!p.jobId) return undefined;
   // An SOS opens the full-screen accept/decline screen; a booking opens the job.
   if (event === 'new_job_pushed') return p.sos ? `/mechanic/incoming/${p.jobId}` : `/mechanic/job/${p.jobId}`;
@@ -96,6 +98,12 @@ export function emitTo(userIds: number[], event: RealtimeEvent, payload: Realtim
   const text = pushText(event, payload);
   const offline = ids.filter((id) => !connected.has(id));
   if (text && offline.length) {
-    void sendPush(offline, text.title, text.body, { event, jobId: payload.jobId, quoteId: payload.quoteId, url: deepLink(event, payload) }, text.channel);
+    void sendPush(
+      offline,
+      text.title,
+      text.body,
+      { event, jobId: payload.jobId, quoteId: payload.quoteId, orderId: payload.orderId, url: deepLink(event, payload) },
+      text.channel,
+    );
   }
 }

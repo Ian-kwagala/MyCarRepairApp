@@ -1,18 +1,21 @@
+// The /admin console: every page and form action, their database queries, and the sign-in and CSRF checks.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { Router, type Request, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 
-import { SOS_ISSUES } from '@/constants/config';
 import { parseFeedback } from '@/utils/jobs';
 
 import { config } from '../config';
 import { one, query, tx } from '../db';
 import { fcmEnabled } from '../fcm';
 import { serviceFee } from '../jobs';
+import { shopSettings } from '../shop';
 import { sendPush } from '../push';
 import { emitTo } from '../realtime';
+import { backTo, chrome, like, mediaSrc, PAGE_SIZE, pageNo, pick, SOS_LIST, SOS_SQL, str } from './common';
+import { adminShopRouter } from './shop';
 import type { ChecklistRow, JobRow, QuoteRow, ReviewRow, UserRow, VehicleRow } from '../types';
 import {
   action,
@@ -38,10 +41,7 @@ import {
   ugx,
   ugxCompact,
   userStatusPill,
-  type NavCounts,
 } from './ui';
-
-// The /admin console: every page and form action, their database queries, and the sign-in and CSRF checks.
 
 /**
  * Operations console for MyCarRepair staff: overview, mechanic approvals, jobs, owners, mechanics, password-reset
@@ -97,42 +97,14 @@ const auth: RequestHandler = (req, res, next) => {
 };
 adminRouter.use(auth);
 
+adminRouter.use('/shop', adminShopRouter);
+
 const SCRIPT = readFileSync(new URL('./admin.js', import.meta.url), 'utf8');
 adminRouter.get('/assets/admin.js', (_req, res) => {
   res.type('application/javascript').send(SCRIPT);
 });
 
 // ── Shared helpers ──────────────────────────────────────────────────────────────────────────────────
-
-const SOS_LIST = [...SOS_ISSUES] as string[];
-const SOS_SQL = `(j.sos_active OR j.service_type = ANY($1::text[]))`;
-const PAGE_SIZE = 50;
-
-async function chrome() {
-  const r = (await one<NavCounts & { maintenance: string | null }>(
-    `SELECT (SELECT COUNT(*) FROM users WHERE role = 'mechanic' AND status = 'pending')::int AS pending,
-            (SELECT COUNT(*) FROM password_resets WHERE expires_at > now())::int AS resets,
-            (SELECT COUNT(*) FROM jobs j WHERE j.status = 'pending' AND j.mechanic_id IS NULL AND ${SOS_SQL})::int AS "openSos",
-            (SELECT value FROM system_config WHERE key = 'maintenance_mode') AS maintenance`,
-    [SOS_LIST],
-  ))!;
-  return { counts: { pending: r.pending, resets: r.resets, openSos: r.openSos }, maintenance: r.maintenance === 'true' };
-}
-
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
-const like = (q: string) => `%${q.replace(/[\\%_]/g, '\\$&')}%`;
-const pageNo = (req: Request) => Math.max(1, Math.min(1000, Number(req.query.page) || 1));
-const mediaSrc = (path: string | null) => (path && /^media\/[A-Za-z0-9._-]+$/.test(path) ? `/${path}` : null);
-
-/** Where to go after a POST: the page it came from (admin pages only), with a notice. */
-function backTo(req: Request, notice: string) {
-  const raw = str(req.body?.back);
-  const safe = raw.startsWith('/admin') && !raw.includes('//') && !raw.includes('\\') && raw.length < 500 ? raw : '/admin';
-  const url = new URL(safe, 'http://local');
-  url.searchParams.set('notice', notice);
-  return `${url.pathname}${url.search}`;
-}
 
 interface JobListRow extends JobRow {
   owner_name: string;
@@ -205,7 +177,8 @@ adminRouter.get('/', async (req, res) => {
             (SELECT COUNT(*) FROM jobs WHERE status = 'completed')::int AS done,
             (SELECT COUNT(*) FROM jobs WHERE status = 'completed' AND updated_at > now() - interval '30 days')::int AS done30,
             (SELECT COALESCE(SUM(total_price), 0) FROM jobs WHERE status = 'completed') AS value,
-            (SELECT COALESCE(SUM(total_price), 0) FROM jobs WHERE status = 'completed' AND updated_at > now() - interval '30 days') AS value30`,
+            (SELECT COALESCE(SUM(total_price), 0) FROM jobs WHERE status = 'completed' AND updated_at > now() - interval '30 days') AS value30,
+            (SELECT COALESCE(SUM(total), 0) FROM orders WHERE status = 'delivered' AND updated_at > now() - interval '30 days') AS shop30`,
   ))!;
   // Jobs created per day over the last 14 days, in Kampala time.
   const days = await query<{ day: string; n: number }>(
@@ -239,6 +212,7 @@ ${tile('/admin/approvals', 'Awaiting approval', num(counts.pending), counts.pend
 ${tile('/admin/owners', 'Car owners', num(s.owners!), `+${num(s.owners_week!)} this week`)}
 ${tile('/admin/jobs?status=completed', 'Completed (30 days)', num(s.done30!), `${num(s.done!)} all time`)}
 ${tile('/admin/jobs?status=completed', 'Job value (30 days)', esc(ugxCompact(s.value30!)), `${esc(ugxCompact(s.value!))} all time`)}
+${tile('/admin/shop/orders?status=placed', 'New shop orders', num(counts.orders), counts.orders ? 'Waiting to be confirmed' : `${esc(ugxCompact(s.shop30!))} sold in 30 days`, counts.orders > 0)}
 </section>
 <div class="grid2"><div>
 <section class="card"><div class="card-h"><h2>Live jobs</h2><a href="/admin/jobs?status=open">View all</a></div>${jobsTable(live, { compact: true })}</section>
@@ -620,8 +594,16 @@ adminRouter.get('/settings', async (req, res) => {
   const s = await settingsMap();
   const fee = await serviceFee();
   const devices = (await one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM device_tokens`))!.n;
+  const shop = await shopSettings();
   const error = str(req.query.error);
-  const body = `${error ? `<div class="notice warn" role="alert">${icon('triangle-alert')}${esc(error === 'phone' ? 'Enter the support number with its country code, for example +256 700 123456.' : 'Enter the version as three numbers, for example 1.0.0.')}</div>` : ''}
+  const body = `${error ? `<div class="notice warn" role="alert">${icon('triangle-alert')}${esc(
+    {
+      phone: 'Enter the support number with its country code, for example +256 700 123456.',
+      version: 'Enter the version as three numbers, for example 1.0.0.',
+      fee: 'Enter the delivery fee in whole shillings, for example 10000 (0 for free delivery).',
+      pickup: 'Enter where owners collect pickup orders (at least a few words).',
+    }[error] ?? 'Check the values and try again.',
+  )}</div>` : ''}
 <div class="grid2"><div>
 <section class="card"><div class="card-h"><h2>App settings</h2></div><div class="card-b"><form method="post" action="/admin/settings">
 <div class="field"><label for="support_phone">Support phone number</label><input id="support_phone" name="support_phone" value="${esc(s.support_phone ?? '+256700000000')}" inputmode="tel" required>
@@ -629,6 +611,11 @@ adminRouter.get('/settings', async (req, res) => {
 <div class="field"><label for="min_app_version">Minimum app version</label><input id="min_app_version" name="min_app_version" value="${esc(s.min_app_version ?? '1.0.0')}" required pattern="\\d+\\.\\d+\\.\\d+">
 <span class="hint">Older apps are asked to update. Leave at 1.0.0 unless an old version must stop working.</span></div>
 <div class="field"><label>Service fee</label><p style="margin:0" class="strong">${esc(ugx(fee))} per job</p><span class="hint">Part of the pricing rules; change it with the web platform team.</span></div>
+<h2 style="margin:18px 0 10px">Shop</h2>
+<div class="field"><label for="delivery_fee">Delivery fee (UGX)</label><input id="delivery_fee" name="delivery_fee" value="${esc(String(shop.deliveryFee))}" inputmode="numeric" required>
+<span class="hint">Added to every shop order delivered to an address. Use 0 for free delivery; pickup is always free.</span></div>
+<div class="field"><label for="pickup_location">Pickup location</label><input id="pickup_location" name="pickup_location" value="${esc(shop.pickupLocation)}" maxlength="150" required>
+<span class="hint">Where owners collect pickup orders, e.g. "MyCarRepair, Plot 12 Bombo Road, Wandegeya".</span></div>
 <button class="btn primary">Save settings</button></form></div></section>
 </div><div>
 <section class="card"><div class="card-h"><h2>Maintenance mode</h2>${maintenance ? pill('On', 'warning') : pill('Off', 'success')}</div><div class="card-b">
@@ -650,8 +637,14 @@ adminRouter.post('/settings', async (req, res) => {
   const version = str(req.body?.min_app_version).trim();
   if (!/^\+?[0-9][0-9 ]{7,18}$/.test(phone)) return res.redirect(303, '/admin/settings?error=phone');
   if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(version)) return res.redirect(303, '/admin/settings?error=version');
+  const fee = str(req.body?.delivery_fee).replace(/[,\s]/g, '');
+  const pickup = str(req.body?.pickup_location).trim().replace(/\s+/g, ' ');
+  if (!/^\d{1,7}$/.test(fee)) return res.redirect(303, '/admin/settings?error=fee');
+  if (pickup.length < 5 || pickup.length > 150) return res.redirect(303, '/admin/settings?error=pickup');
   await setConfig('support_phone', phone.replace(/\s+/g, ' '));
   await setConfig('min_app_version', version);
+  await setConfig('delivery_fee', String(Number(fee)));
+  await setConfig('pickup_location', pickup);
   res.redirect(303, '/admin/settings?notice=settings');
 });
 

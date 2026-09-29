@@ -1,21 +1,22 @@
+// Form inputs: text fields, segmented toggles, chips, big selection tiles, star ratings, a date strip
+// and photo pickers.
 import { Image } from 'expo-image';
 import { Camera, ImagePlus, Star, X, type LucideIcon } from '@/components/icons';
-import { useState, type ReactNode } from 'react';
+import { usePathname } from 'expo-router';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputProps, type TextStyle } from 'react-native';
 
 import { errorMessage } from '@/api/errors';
 import type { LocalPhoto } from '@/models';
 import { PermissionDeniedError, pickPhotos, type PhotoSource } from '@/services/media';
 import { openSettings } from '@/services/location';
+import { useRecoveredPhotos } from '@/store/recovered-photos';
 import { toast } from '@/store/toast';
 import { Font, Radius, Space, Touch, useColors } from '@/theme';
 import { toISODate } from '@/utils/format';
 
 import { haptic } from './button';
 import { Text } from './text';
-
-// Form inputs: text fields, segmented toggles, chips, big selection tiles, star ratings, a date strip
-// and photo pickers.
 
 export interface FieldProps extends TextInputProps {
   label: string;
@@ -304,10 +305,18 @@ export function PhotoPicker({
 }) {
   const c = useColors();
   const remaining = max - photos.length - existing.length;
+  const route = usePathname();
+  // A camera photo recovered after Android closed the app comes back to this screen (features/camera-recovery).
+  const recovered = useRecoveredPhotos((s) => s.byRoute[route]);
+  useEffect(() => {
+    if (!recovered?.length) return;
+    const got = useRecoveredPhotos.getState().take(route);
+    onChange([...photos, ...got].slice(0, max - existing.length));
+  }, [recovered, route, photos, onChange, max, existing.length]);
   // Adds picked photos (capped at the limit). A denied permission shows a toast that opens Settings.
   const pick = async (source: PhotoSource) => {
     try {
-      const got = await pickPhotos(source, remaining);
+      const got = await pickPhotos(source, remaining, { kind: 'form', route });
       if (got.length) onChange([...photos, ...got].slice(0, max - existing.length));
     } catch (e) {
       if (e instanceof PermissionDeniedError) {
