@@ -1,3 +1,5 @@
+// Owner's live view of one repair job: progress, the mechanic, parts to approve, the steps (with photo or video
+// proof), and for a booking the drop-off or pickup choice.
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { CalendarDays, Phone, Receipt, Siren, Star } from '@/components/icons';
@@ -25,6 +27,7 @@ import {
   Text,
   type MapPoint,
 } from '@/components';
+import { HandoverCard } from '@/features/handover-card';
 import { useJob } from '@/hooks/queries';
 import { callPhone } from '@/services/location';
 import { queryClient } from '@/services/query-client';
@@ -34,7 +37,6 @@ import { confirm } from '@/utils/confirm';
 import { formatDate, formatUGX } from '@/utils/format';
 import { computeTotals, isActive, pendingQuotes, progress, statusLabel } from '@/utils/jobs';
 
-// Owner's live view of one repair job.
 
 /**
  * O9 Live repair tracker — 5-stage timeline, live checklist, pending quotes → O10. Also shows the
@@ -136,6 +138,9 @@ export default function Tracker() {
         </Card>
       ) : null}
 
+      {/* An accepted booking: its day, and how the car gets to the garage (drop-off or pickup). */}
+      {job.status === 'accepted' && job.scheduledDate && !job.sosActive ? <HandoverCard job={job} /> : null}
+
       {mech ? (
         <Card>
           <Row gap={Space.md}>
@@ -166,7 +171,7 @@ export default function Tracker() {
       ) : null}
 
       {job.checklist?.length ? (
-        <Section title={`Checklist · ${pr.done}/${pr.total}`}>
+        <Section title={`${job.status === 'accepted' ? 'Planned steps' : 'Steps'} · ${pr.done}/${pr.total}`}>
           <Card style={{ paddingVertical: Space.xs }}>
             {job.checklist.map((t) => (
               <ChecklistRow key={t.id} item={t} />

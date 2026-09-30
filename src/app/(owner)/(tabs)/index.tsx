@@ -28,8 +28,8 @@ import type { Job } from '@/models';
 import { reverseGeocode } from '@/services/location';
 import { useUser } from '@/store/session';
 import { Brand, Radius, Space, useColors } from '@/theme';
-import { greeting } from '@/utils/format';
-import { pendingQuotes, progress, statusLabel, statusTone } from '@/utils/jobs';
+import { formatDate, greeting } from '@/utils/format';
+import { bookingDay, pendingQuotes, progress, statusLabel, statusTone } from '@/utils/jobs';
 
 
 /** O1 Owner home — fastest path to SOS (1 tap), services, active repair, garage. */
@@ -215,15 +215,25 @@ function ActiveRepairCard({ job }: { job: Job }) {
   const pr = progress(job.checklist);
   const quotes = pendingQuotes(job).length;
   const isSosSearch = job.sosActive && (job.status === 'pending' || job.status === 'accepted');
+  // An accepted booking: when it is, and whether the owner still has to choose drop-off or pickup.
+  const booked = job.status === 'accepted' && !!job.scheduledDate && !job.sosActive;
+  const day = booked ? bookingDay(job.scheduledDate!) : null;
+  const when = day === 'today' ? 'today' : day === 'tomorrow' ? 'tomorrow' : booked ? formatDate(job.scheduledDate, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  const needsHandover = booked && !job.handover;
   // Status line built from whichever parts apply, joined with " · ".
   const detail = [
     job.status === 'pending' ? (job.sosActive ? 'Finding a mechanic…' : 'Waiting for a mechanic to accept') : null,
-    job.status === 'accepted' ? `${job.mechanic?.fullName ?? 'Mechanic'} ${job.sosActive ? 'is on the way' : 'accepted'}` : null,
-    job.status === 'fixing' && pr.total ? `${pr.done} of ${pr.total} tasks` : null,
+    booked
+      ? `${job.mechanic?.garageName || job.mechanic?.fullName || 'Mechanic'} · ${when}${needsHandover ? ' · choose drop-off or pickup' : ''}`
+      : job.status === 'accepted'
+        ? `${job.mechanic?.fullName ?? 'Mechanic'} ${job.sosActive ? 'is on the way' : 'accepted'}`
+        : null,
+    job.status === 'fixing' && pr.total ? `${pr.done} of ${pr.total} steps` : null,
     quotes ? `${quotes} quote${quotes > 1 ? 's' : ''} waiting` : null,
   ]
     .filter(Boolean)
     .join(' · ');
+  const label = booked ? (day === 'later' ? 'Upcoming' : day === 'tomorrow' ? 'Tomorrow' : 'Today') : statusLabel(job.status);
   return (
     <Card
       tone="dark"
@@ -232,9 +242,9 @@ function ActiveRepairCard({ job }: { job: Job }) {
       style={{ gap: Space.sm }}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Text variant="label" style={{ color: '#cbd5e1' }}>
-          Active {job.sosActive ? 'SOS' : 'repair'} · {statusLabel(job.status)}
+          {booked ? 'Booked service' : `Active ${job.sosActive ? 'SOS' : 'repair'}`} · {label}
         </Text>
-        {quotes ? <StatusPill label="Action needed" tone="warning" /> : <StatusPill label={statusLabel(job.status)} tone={statusTone(job.status)} />}
+        {quotes || needsHandover ? <StatusPill label="Action needed" tone="warning" /> : <StatusPill label={label} tone={booked ? 'info' : statusTone(job.status)} />}
       </Row>
       <Text variant="heading" style={{ color: '#fff' }}>
         {job.serviceType}
@@ -245,7 +255,7 @@ function ActiveRepairCard({ job }: { job: Job }) {
         <Text style={{ color: '#cbd5e1', flex: 1 }}>{detail}</Text>
         <ChevronRight size={20} color="#fff" />
       </Row>
-      {quotes ? <View style={[styles.quoteBar, { backgroundColor: c.primary }]} /> : null}
+      {quotes || needsHandover ? <View style={[styles.quoteBar, { backgroundColor: c.primary }]} /> : null}
     </Card>
   );
 }

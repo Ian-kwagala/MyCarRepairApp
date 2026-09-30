@@ -29,6 +29,7 @@ import type {
   BookingInput,
   DiagnosticInput,
   EarningsRange,
+  HandoverInput,
   ForgotPasswordResult,
   JobScope,
   LoginInput,
@@ -52,6 +53,9 @@ type Body = Record<string, unknown> | FormData | undefined;
 
 /** Requests taking longer than this are aborted and reported as a network error. */
 const TIMEOUT_MS = 20_000;
+// Uploads get longer on slow mobile data: a few photos, or one short video.
+const UPLOAD_TIMEOUT_MS = 90_000;
+const VIDEO_UPLOAD_TIMEOUT_MS = 5 * 60_000;
 // The server sleeps after 15 min idle (free hosting) and takes up to a minute to wake. Until a response shows it
 // is awake, requests wait longer, and after a few seconds the app shows a "waking up" banner.
 const WAKE_TIMEOUT_MS = 75_000;
@@ -146,7 +150,7 @@ export class RemoteApiClient implements ApiClient {
    * Sends one HTTP request and returns the parsed JSON body. Throws ApiError with the server's code and
    * message on failure, or a network error if the server can't be reached or times out. No retry.
    */
-  private async raw(method: string, path: string, body?: Body, auth = true): Promise<any> {
+  private async raw(method: string, path: string, body?: Body, auth = true, timeoutMs = TIMEOUT_MS): Promise<any> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (auth && this.tokens?.accessToken) headers.Authorization = `Bearer ${this.tokens.accessToken}`;
     let payload: BodyInit | undefined;
@@ -158,7 +162,7 @@ export class RemoteApiClient implements ApiClient {
     }
     const cold = Date.now() - lastResponseAt > AWAKE_FOR_MS;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), cold ? WAKE_TIMEOUT_MS : TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), Math.max(timeoutMs, cold ? WAKE_TIMEOUT_MS : 0));
     const slow = cold ? setTimeout(() => setServerWaking(true), SLOW_AFTER_MS) : undefined;
     let res: Response;
     try {
@@ -194,12 +198,12 @@ export class RemoteApiClient implements ApiClient {
    * An authenticated request. On 401 it refreshes the token once and retries; if that fails the app is
    * signed out and the error is re-thrown.
    */
-  private async req<T>(method: string, path: string, body?: Body): Promise<T> {
+  private async req<T>(method: string, path: string, body?: Body, timeoutMs?: number): Promise<T> {
     try {
-      return await this.raw(method, path, body);
+      return await this.raw(method, path, body, true, timeoutMs);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401 && (await this.refresh())) {
-        return this.raw(method, path, body);
+        return this.raw(method, path, body, true, timeoutMs);
       }
       if (e instanceof ApiError && e.status === 401) this.tokenListener?.(null);
       throw e;
@@ -212,7 +216,8 @@ export class RemoteApiClient implements ApiClient {
    * deleted (see services/media); on failure they stay so the user can simply press send again.
    */
   private async upload<T>(method: string, path: string, fields: Record<string, unknown>, files: Record<string, LocalPhoto[]>): Promise<T> {
-    const result = await this.req<T>(method, path, await toForm(fields, files));
+    const video = Object.values(files).some((list) => list.some((f) => f.type.startsWith('video/')));
+    const result = await this.req<T>(method, path, await toForm(fields, files), video ? VIDEO_UPLOAD_TIMEOUT_MS : UPLOAD_TIMEOUT_MS);
     forgetUploadedPhotos(Object.values(files).flat());
     return result;
   }
@@ -348,7 +353,15 @@ export class RemoteApiClient implements ApiClient {
     return this.req<Job>('POST', `/mechanic/jobs/${jobId}/arrived`);
   }
   updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }) {
-    return this.upload<ChecklistItem>('PATCH', `/mechanic/tasks/${taskId}`, { isCompleted: input.isCompleted }, { photo: input.photo ? [input.photo] : [] });
+    // Videos go in their own field, which the server allows to be larger.
+    const field = input.photo?.type.startsWith('video/') ? 'video' : 'photo';
+    return this.upload<ChecklistItem>('PATCH', `/mechanic/tasks/${taskId}`, { isCompleted: input.isCompleted }, { [field]: input.photo ? [input.photo] : [] });
+  }
+  addTask(jobId: number, description: string) {
+    return this.req<ChecklistItem>('POST', `/mechanic/jobs/${jobId}/tasks`, { description });
+  }
+  setHandover(jobId: number, input: HandoverInput) {
+    return this.req<Job>('POST', `/jobs/${jobId}/handover`, { ...input });
   }
   createQuote(jobId: number, input: QuoteInput) {
     return this.upload<PartsQuote>('POST', `/mechanic/jobs/${jobId}/quotes`, { partName: input.partName, price: input.price }, { photos: input.photos });

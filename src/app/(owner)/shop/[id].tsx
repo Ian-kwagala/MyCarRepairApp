@@ -60,6 +60,7 @@ export default function ProductDetail() {
   const details: [string, string][] = (
     [
       ['Section', categoryLabel(p.category)],
+      ['Sold by', p.seller?.shopName ?? 'MyCarRepair'],
       ['Brand', p.brand ?? ''],
       ['Part number', p.partNumber ?? ''],
       ['Fits', p.compatibleWith || 'Most cars'],
@@ -113,7 +114,7 @@ export default function ProductDetail() {
           <Text style={{ fontFamily: Font.bold, fontSize: 22, color: c.text }}>{formatUGX(p.price)}</Text>
           {soldOut ? <StatusPill label="Sold out" tone="danger" /> : <StatusPill label={p.stock <= 5 ? `Only ${p.stock} left` : 'In stock'} tone={p.stock <= 5 ? 'warning' : 'success'} />}
         </Row>
-        <GenuineBadge warrantyMonths={p.warrantyMonths} />
+        <GenuineBadge warrantyMonths={p.warrantyMonths} seller={p.seller} />
       </View>
 
       {inCart ? (
@@ -137,7 +138,10 @@ export default function ProductDetail() {
       </Card>
 
       {p.description ? <Text>{p.description}</Text> : null}
-      <Text variant="caption">Delivered to you or picked up from MyCarRepair. Pay with cash or mobile money when you receive it.</Text>
+      <Text variant="caption">
+        {p.seller ? 'MyCarRepair collects it from the seller and delivers it, or you pick it up from MyCarRepair.' : 'Delivered to you or picked up from MyCarRepair.'} Pay with cash or mobile
+        money when you receive it.
+      </Text>
     </Screen>
   );
 }

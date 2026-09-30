@@ -1,12 +1,63 @@
+// Job business logic shared by the apps, the local store and the server: progress stages, status labels and
+// colours, price totals, the "can finish" rule, job steps per service, booking dates, service-due dates and review tags.
 import type { ChecklistItem, Job, JobStatus, PartsQuote, Vehicle } from '@/models';
-import { SERVICE_FEE, SERVICE_INTERVAL_MONTHS } from '@/constants/config';
+import { ARRIVAL_CHECKLIST, DIAGNOSTICS_STEPS_KEY, SERVICE_FEE, SERVICE_INTERVAL_MONTHS } from '@/constants/config';
 
-// Job business logic shared by screens and the local store: progress stages, status labels and colours,
-// price totals, the "can finish" rule, service-due dates and review tags.
-
-/** The steps shown on the owner's job progress tracker. */
+/** The steps shown on the owner's job progress tracker (SOS and diagnostics: the mechanic comes to the car). */
 export const STAGES = ['Sent', 'Accepted', 'Arrived', 'Fixing', 'Done'] as const;
-export type Stage = (typeof STAGES)[number];
+/** Tracker steps for a booked service: the car is checked in at the garage (or collected) on the booked day. */
+export const BOOKING_STAGES = ['Booked', 'Accepted', 'Check-in', 'Fixing', 'Done'] as const;
+export type Stage = (typeof STAGES)[number] | (typeof BOOKING_STAGES)[number];
+
+/** Tracker steps for a job: bookings (they have a date) are checked in, everything else is "arrived at". */
+export function stagesFor(job: Pick<Job, 'scheduledDate'>): readonly Stage[] {
+  return job.scheduledDate ? BOOKING_STAGES : STAGES;
+}
+
+/** Which row of the job-steps table a service type uses ("Diagnostic: …" jobs share one row). */
+export function stepsKey(serviceType: string): string {
+  return serviceType.startsWith('Diagnostic') ? DIAGNOSTICS_STEPS_KEY : serviceType.trim();
+}
+
+/**
+ * The steps a new job card starts with for a service type, from `table` (defaults merged with the admin's
+ * changes). Matching ignores case; unknown services get the general arrival checklist.
+ */
+export function stepsFor(serviceType: string, table: Record<string, readonly string[]>): string[] {
+  const key = stepsKey(serviceType).toLowerCase();
+  const hit = Object.entries(table).find(([k]) => k.toLowerCase() === key)?.[1];
+  return [...(hit?.length ? hit : ARRIVAL_CHECKLIST)];
+}
+
+/** YYYY-MM-DD of a date in the phone's own time zone (bookings store a plain calendar date). */
+function localDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Where a booked date falls relative to today: 'past', 'today', 'tomorrow' or 'later'. */
+export function bookingDay(scheduledDate: string, now = new Date()): 'past' | 'today' | 'tomorrow' | 'later' {
+  const today = localDay(now);
+  const tomorrow = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+  if (scheduledDate < today) return 'past';
+  if (scheduledDate === today) return 'today';
+  return scheduledDate === tomorrow ? 'tomorrow' : 'later';
+}
+
+/**
+ * An accepted booking whose day hasn't come yet. These stay quiet: no live tracking or location sharing until
+ * the day, just reminders the evening before and that morning.
+ */
+export function isUpcomingBooking(job: Pick<Job, 'status' | 'scheduledDate' | 'sosActive'>, now = new Date()): boolean {
+  if (job.sosActive || job.status !== 'accepted' || !job.scheduledDate) return false;
+  const d = bookingDay(job.scheduledDate, now);
+  return d === 'tomorrow' || d === 'later';
+}
+
+/** When a booking's reminders go off, in the phone's time zone: 6 pm the day before and 7 am on the day. */
+export function reminderTimes(scheduledDate: string): { eve: Date; day: Date } {
+  const [y, m, d] = scheduledDate.split('-').map(Number) as [number, number, number];
+  return { eve: new Date(y, m - 1, d - 1, 18, 0), day: new Date(y, m - 1, d, 7, 0) };
+}
 
 /**
  * O9 stage mapping: pending→Sent, accepted→Accepted, fixing (no task yet)→Arrived,

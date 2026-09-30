@@ -6,6 +6,7 @@ import type {
   ChecklistItem,
   Earnings,
   FuelType,
+  HandoverMode,
   Job,
   LocalPhoto,
   MechanicStats,
@@ -174,6 +175,14 @@ export interface PlaceOrderInput {
   note?: string | null;
 }
 
+/** POST /jobs/:id/handover body. The address (and optional GPS point) is only needed for a pickup. */
+export interface HandoverInput {
+  mode: HandoverMode;
+  pickupAddress?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+}
+
 export interface ApiClient {
   readonly mode: 'local' | 'remote';
 
@@ -211,6 +220,8 @@ export interface ApiClient {
   decideQuote(quoteId: number, decision: 'approve' | 'reject'): Promise<PartsQuote>;
   getReceipt(jobId: number): Promise<{ url: string }>;
   submitReview(jobId: number, input: ReviewInput): Promise<Review>;
+  /** Bookings: how the car reaches the mechanic (the owner brings it, or the mechanic collects it). */
+  setHandover(jobId: number, input: HandoverInput): Promise<Job>;
 
   // Mechanic
   setOnline(isOnline: boolean): Promise<User>;
@@ -219,7 +230,10 @@ export interface ApiClient {
   acceptJob(jobId: number): Promise<Job>;
   declineJob(jobId: number): Promise<void>;
   markArrived(jobId: number): Promise<Job>;
+  /** Ticks a step; `photo` may be a photo or a short video (its `type` says which) as proof. */
   updateTask(taskId: number, input: { isCompleted: boolean; photo?: LocalPhoto | null }): Promise<ChecklistItem>;
+  /** Adds a step this job needs beyond its service's usual steps. */
+  addTask(jobId: number, description: string): Promise<ChecklistItem>;
   createQuote(jobId: number, input: QuoteInput): Promise<PartsQuote>;
   completeJob(jobId: number): Promise<Job>;
   earnings(range: EarningsRange): Promise<Earnings>;

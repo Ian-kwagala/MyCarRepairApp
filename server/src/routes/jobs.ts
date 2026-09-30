@@ -1,14 +1,17 @@
+// Owner job API: bookings (with the steps for their service), diagnostics, SOS dispatch and cancel, the owner's job
+// lists and details, the drop-off/pickup choice for bookings, quote decisions, receipts and reviews.
 import { Router } from 'express';
 import { z } from 'zod';
 
-import { BOOKING_CHECKLIST, DISPATCH, SERVICE_TYPE_MAX } from '@/constants/config';
+import { DISPATCH, SERVICE_TYPE_MAX } from '@/constants/config';
+import { firstName } from '@/utils/format';
 import { etaRange } from '@/utils/geo';
 import { composeFeedback } from '@/utils/jobs';
 
 import { me, requireAuth, requireRole } from '../auth';
 import { pool, query, tx, type Db } from '../db';
 import { E } from '../errors';
-import { expandAll, expandJob, jobSummary, nearestMechanics, onlineMechanicIds, sosTargets } from '../jobs';
+import { addDefaultSteps, expandAll, expandJob, jobSummary, nearestMechanics, onlineMechanicIds, sosTargets } from '../jobs';
 import { toQuote, toReview } from '../mappers';
 import { baseUrl, filesOf, storeFiles, upload } from '../media';
 import { emitTo } from '../realtime';
@@ -35,7 +38,7 @@ async function insertJob(db: Db, owner: UserRow, vehicleId: number, serviceType:
   ).rows[0];
 }
 
-/** POST /jobs/bookings — job (pending) + default 10-item checklist; dispatched to online mechanics. */
+/** POST /jobs/bookings — job (pending) + the steps for its service; dispatched to online mechanics. */
 jobsRouter.post('/jobs/bookings', requireRole('owner'), async (req, res) => {
   const u = me(req);
   const b = z
@@ -47,7 +50,7 @@ jobsRouter.post('/jobs/bookings', requireRole('owner'), async (req, res) => {
   if (b.scheduledDate < earliestToday) throw E.validation('Choose today or a future date.');
   const { job, targets, payload } = await tx(async (db) => {
     const row = await insertJob(db, u, b.vehicleId, b.serviceType, false);
-    for (const t of BOOKING_CHECKLIST) await db.query(`INSERT INTO job_checklists (job_id, task_description) VALUES ($1, $2)`, [row.id, t]);
+    await addDefaultSteps(db, row);
     await db.query(`INSERT INTO job_extras (job_id, scheduled_date, notes) VALUES ($1, $2, $3)`, [row.id, b.scheduledDate, b.notes || null]);
     return {
       job: await expandJob(db, baseUrl(req), row, u),
@@ -162,6 +165,50 @@ jobsRouter.get('/jobs/:id', async (req, res) => {
     if (row.status === 'cancelled') throw E.conflict('JOB_CANCELLED', 'The owner cancelled this request.');
   }
   throw E.notFound('Job');
+});
+
+const handoverSchema = z
+  .object({
+    mode: z.enum(['drop_off', 'pickup']),
+    pickupAddress: z.string().trim().max(300).optional().nullable(),
+    lat: z.number().min(-90).max(90).optional().nullable(),
+    lng: z.number().min(-180).max(180).optional().nullable(),
+  })
+  .refine((b) => b.mode === 'drop_off' || (b.pickupAddress?.length ?? 0) >= 5, {
+    message: 'Enter where the mechanic should collect the car (area, street, landmark).',
+    path: ['pickupAddress'],
+  });
+
+/**
+ * POST /jobs/:id/handover {mode, pickupAddress?, lat?, lng?} — for a booking, the owner says whether they bring the
+ * car to the garage or the mechanic collects it. Can be changed until the mechanic has the car. The mechanic is
+ * told in the app only (no push): bookings stay quiet until the reminders.
+ */
+jobsRouter.post('/jobs/:id/handover', requireRole('owner'), async (req, res) => {
+  const u = me(req);
+  const b = handoverSchema.parse(req.body);
+  const out = await tx(async (db) => {
+    const job = (await db.query<JobRow>(`SELECT * FROM jobs WHERE id = $1 AND owner_id = $2 FOR UPDATE`, [Number(req.params.id), u.id])).rows[0];
+    if (!job) throw E.notFound('Job');
+    const extra = (await db.query<{ scheduled_date: string | null }>(`SELECT scheduled_date FROM job_extras WHERE job_id = $1`, [job.id])).rows[0];
+    if (job.sos_active || !extra?.scheduled_date) throw E.unprocessable('NOT_A_BOOKING', 'Only booked services have a drop-off or pickup.');
+    if (!['pending', 'accepted'].includes(job.status)) throw E.unprocessable('INVALID_STATE', 'The mechanic already has your car.');
+    const pickup = b.mode === 'pickup';
+    await db.query(`UPDATE job_extras SET handover = $2, pickup_address = $3, pickup_lat = $4, pickup_lng = $5 WHERE job_id = $1`, [
+      job.id,
+      b.mode,
+      pickup ? b.pickupAddress : null,
+      pickup ? (b.lat ?? null) : null,
+      pickup ? (b.lng ?? null) : null,
+    ]);
+    const row = (await db.query<JobRow>(`UPDATE jobs SET updated_at = now() WHERE id = $1 RETURNING *`, [job.id])).rows[0]!;
+    return { job: await expandJob(db, baseUrl(req), row, u), mechanicId: job.mechanic_id };
+  });
+  if (out.mechanicId) {
+    const summary = b.mode === 'pickup' ? `Collect the car from ${b.pickupAddress}` : `${firstName(u.full_name)} will bring the car to your garage`;
+    emitTo([out.mechanicId], 'appointment_update', { jobId: out.job.id, summary, forMechanic: true }, { push: false });
+  }
+  res.json(out.job);
 });
 
 /** POST /quotes/:id/decision {decision: approve|reject} — final; notifies the mechanic. */

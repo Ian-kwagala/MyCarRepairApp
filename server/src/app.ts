@@ -1,4 +1,5 @@
-// The Express app: security middleware, the /api/v1 routes, photos, receipts and the /admin console.
+// The Express app: security middleware, the /api/v1 routes, photos, receipts, the /admin console and the /seller
+// portal for marketplace sellers.
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
@@ -14,6 +15,7 @@ import { mechanicRouter } from './routes/mechanic';
 import { meRouter } from './routes/me';
 import { shopRouter } from './routes/shop';
 import { vehiclesRouter } from './routes/vehicles';
+import { sellerRouter } from './seller/router';
 
 /** Builds the Express app (index.ts adds the HTTP server and Socket.io; the tests reuse it). */
 export function createApp() {
@@ -46,6 +48,7 @@ export function createApp() {
   app.get('/media/:key', serveMedia);
   app.get('/receipts/:id', serveReceipt);
   app.use('/admin', adminRouter);
+  app.use('/seller', sellerRouter);
 
   app.use(errorHandler);
   return app;

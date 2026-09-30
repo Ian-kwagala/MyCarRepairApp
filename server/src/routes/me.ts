@@ -8,6 +8,7 @@ import { normalizePhone } from '@/utils/format';
 import { me, requireAuth } from '../auth';
 import { pool, query } from '../db';
 import { toUser } from '../mappers';
+import { KAMPALA_TODAY } from '../jobs';
 import { emitTo } from '../realtime';
 import type { UserRow } from '../types';
 
@@ -66,8 +67,12 @@ meRouter.post('/me/location', requireAuth, async (req, res) => {
   const b = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), accuracy: z.number().nullable().optional() }).parse(req.body);
   await pool.query(`UPDATE users SET location_lat = $2, location_lng = $3 WHERE id = $1`, [u.id, b.lat, b.lng]);
   if (u.role === 'mechanic') {
+    // SOS and diagnostic jobs: the owner follows the mechanic. Bookings stay quiet: only a pickup, on or after the
+    // booked day, shares the mechanic's position (a car dropped off at the garage needs no tracking).
     const live = await query<{ id: number; owner_id: number }>(
-      `SELECT id, owner_id FROM jobs WHERE mechanic_id = $1 AND status IN ('accepted', 'diagnosing', 'fixing', 'ready')`,
+      `SELECT j.id, j.owner_id FROM jobs j LEFT JOIN job_extras x ON x.job_id = j.id
+       WHERE j.mechanic_id = $1 AND j.status IN ('accepted', 'diagnosing', 'fixing', 'ready')
+         AND (x.scheduled_date IS NULL OR (j.status = 'accepted' AND x.handover = 'pickup' AND x.scheduled_date <= ${KAMPALA_TODAY}))`,
       [u.id],
     );
     for (const j of live) emitTo([j.owner_id], 'mechanic_location', { jobId: j.id, lat: b.lat, lng: b.lng });

@@ -1,6 +1,10 @@
+// API errors: the ApiError class, factories for the standard errors, and the Express handler that turns any
+// thrown error into the { error: { code, message } } envelope the apps expect.
 import type { ErrorRequestHandler } from 'express';
 import multer from 'multer';
 import { ZodError } from 'zod';
+
+import { VIDEO_MAX_MB } from '@/constants/config';
 
 /** Uniform error envelope: { error: { code, message } } with HTTP 400/401/403/404/409/422 (§6 task 8). */
 export class ApiError extends Error {
@@ -33,7 +37,13 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
   if (err instanceof multer.MulterError) {
-    const message = err.code === 'LIMIT_FILE_SIZE' ? 'Each photo must be 5 MB or smaller.' : 'Too many or invalid photos (max 5).';
+    // The job-step proof upload also takes videos (field "video"), with a larger limit.
+    const message =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? err.field === 'video'
+          ? `The video is too large (max ${VIDEO_MAX_MB} MB). Record a shorter clip.`
+          : 'Each photo must be 5 MB or smaller.'
+        : 'Too many or invalid photos (max 5).';
     res.status(400).json({ error: { code: 'VALIDATION_ERROR', message } });
     return;
   }

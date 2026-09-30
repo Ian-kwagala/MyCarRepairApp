@@ -1,28 +1,32 @@
+// Car-repair-specific components: job timeline, checklist rows, quote and vehicle cards, job list items,
+// avatars, stat tiles, the SOS radar animation, the earnings chart and the "can't finish yet" notice.
 import { Image } from 'expo-image';
-import { Camera, Car, Check, ChevronRight, Lock } from '@/components/icons';
+import { Camera, Car, Check, ChevronRight, CirclePlay, Lock } from '@/components/icons';
 import { useEffect, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 
 import type { ChecklistItem, Job, PartsQuote, Vehicle } from '@/models';
+import { openMedia } from '@/services/media';
 import { Font, Radius, Space, useColors } from '@/theme';
 import { compactUGX, formatDate, formatUGX, initials } from '@/utils/format';
 import { formatKm } from '@/utils/geo';
-import { STAGES, serviceDueInDays, serviceDueText, stageIndex, statusLabel, statusTone, vehicleLabel } from '@/utils/jobs';
+import { bookingDay, serviceDueInDays, serviceDueText, stageIndex, stagesFor, statusLabel, statusTone, vehicleLabel } from '@/utils/jobs';
 
 import { Card, Row } from './layout';
 import { StatusPill } from './feedback';
 import { Text } from './text';
 
-// Car-repair-specific components: job timeline, checklist rows, quote and vehicle cards, job list items,
-// avatars, stat tiles, the SOS radar animation, the earnings chart and the "can't finish yet" notice.
-
-/** O9 5-stage timeline: Sent · Accepted · Arrived · Fixing · Done. Completed stages are green with a tick. */
-export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist'> }) {
+/**
+ * O9 5-stage timeline: Sent · Accepted · Arrived · Fixing · Done (bookings: Booked · Accepted · Checked in ·
+ * Fixing · Done). Completed stages are green with a tick.
+ */
+export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist' | 'scheduledDate'> }) {
   const c = useColors();
   const idx = stageIndex(job);
+  const stages = stagesFor(job);
   return (
-    <View style={styles.timeline} accessibilityLabel={`Stage ${idx + 1} of 5: ${STAGES[Math.max(0, idx)]}`}>
-      {STAGES.map((s, i) => {
+    <View style={styles.timeline} accessibilityLabel={`Stage ${idx + 1} of 5: ${stages[Math.max(0, idx)]}`}>
+      {stages.map((s, i) => {
         const done = i <= idx;
         const current = i === idx;
         return (
@@ -41,7 +45,7 @@ export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist'> 
                 ]}>
                 {done ? <Check size={12} color="#fff" strokeWidth={3} /> : null}
               </View>
-              <View style={[styles.line, { backgroundColor: i === STAGES.length - 1 ? 'transparent' : i < idx ? c.success : c.border }]} />
+              <View style={[styles.line, { backgroundColor: i === stages.length - 1 ? 'transparent' : i < idx ? c.success : c.border }]} />
             </View>
             <Text
               variant="caption"
@@ -59,19 +63,22 @@ export function StageTimeline({ job }: { job: Pick<Job, 'status' | 'checklist'> 
 }
 
 /**
- * One checklist task: a tickable checkbox, the task's photo thumbnail if any, and a camera button when
- * `onPhoto` is given. Read-only when `onToggle` is omitted.
+ * One checklist step: a tickable checkbox, its proof (a photo thumbnail or a video tile; tap to open it full
+ * screen), and a camera button when `onPhoto` is given (a spinner while `busy` uploads). Read-only when `onToggle`
+ * is omitted.
  */
 export function ChecklistRow({
   item,
   onToggle,
   onPhoto,
   disabled,
+  busy,
 }: {
   item: ChecklistItem;
   onToggle?: () => void;
   onPhoto?: () => void;
   disabled?: boolean;
+  busy?: boolean;
 }) {
   const c = useColors();
   return (
@@ -95,11 +102,23 @@ export function ChecklistRow({
         </Text>
       </Pressable>
       {item.photoUrl ? (
-        <Image source={{ uri: item.photoUrl }} style={styles.thumb} accessibilityLabel="Task photo evidence" />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={item.proofKind === 'video' ? `Play video proof for ${item.taskDescription}` : `Open photo proof for ${item.taskDescription}`}
+          onPress={() => void openMedia(item.photoUrl!)}
+          hitSlop={6}>
+          {item.proofKind === 'video' ? (
+            <View style={[styles.thumb, styles.videoThumb]}>
+              <CirclePlay size={20} color="#fff" />
+            </View>
+          ) : (
+            <Image source={{ uri: item.photoUrl }} style={styles.thumb} accessibilityIgnoresInvertColors />
+          )}
+        </Pressable>
       ) : null}
       {onPhoto ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Add photo proof for ${item.taskDescription}`} onPress={onPhoto} hitSlop={8} style={styles.camBtn} disabled={disabled}>
-          <Camera size={20} color={c.textMuted} />
+        <Pressable accessibilityRole="button" accessibilityLabel={`Add photo or video proof for ${item.taskDescription}`} onPress={onPhoto} hitSlop={8} style={styles.camBtn} disabled={disabled}>
+          {busy ? <ActivityIndicator color={c.textMuted} /> : <Camera size={20} color={c.textMuted} />}
         </Pressable>
       ) : null}
     </View>
@@ -229,7 +248,7 @@ export function JobListItem({
           </Text>
           {job.sosActive ? <StatusPill label="SOS" tone="danger" /> : null}
         </Row>
-        {right ?? <StatusPill label={statusLabel(job.status)} tone={statusTone(job.status)} />}
+        {right ?? <StatusPill label={bookingLabel(job) ?? statusLabel(job.status)} tone={bookingLabel(job) ? 'neutral' : statusTone(job.status)} />}
       </Row>
       {sub ? <Text variant="caption">{sub}</Text> : null}
       <Row style={{ justifyContent: 'space-between' }}>
@@ -253,6 +272,13 @@ export function JobListItem({
       </Row>
     </Card>
   );
+}
+
+/** "Upcoming", "Tomorrow" or "Today" for an accepted booking waiting for its day; null otherwise. */
+function bookingLabel(job: Job): string | null {
+  if (job.status !== 'accepted' || !job.scheduledDate || job.sosActive) return null;
+  const d = bookingDay(job.scheduledDate);
+  return d === 'later' ? 'Upcoming' : d === 'tomorrow' ? 'Tomorrow' : 'Today';
 }
 
 /** Round avatar showing the person's initials. */
@@ -377,6 +403,7 @@ const styles = StyleSheet.create({
   checkMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Space.md, paddingVertical: Space.sm, minHeight: 48 },
   checkbox: { width: 28, height: 28, borderRadius: 8, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   thumb: { width: 36, height: 36, borderRadius: 8 },
+  videoThumb: { backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' },
   camBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   quoteImg: { width: 60, height: 60, borderRadius: 12 },
   stat: { flex: 1, borderRadius: Radius.card, padding: Space.md, borderWidth: StyleSheet.hairlineWidth, gap: 2 },

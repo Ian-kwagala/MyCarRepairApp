@@ -1,5 +1,5 @@
-// Owner Shop tab (marketplace): genuine spare parts and accessories sold by MyCarRepair. Sections, search, a
-// "fits my car" filter and the product grid; the cart and past orders open from the header.
+// Owner Shop tab (marketplace): genuine spare parts and accessories from MyCarRepair and checked sellers. Sections,
+// search, a "fits my car" filter and the product grid; the cart and past orders open from the header.
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
@@ -93,7 +93,7 @@ export default function Shop() {
       )}
 
       <InlineNotice icon={ShieldCheck} tone="success">
-        Every item is genuine and sold by MyCarRepair. Pay with cash or mobile money when it arrives.
+        Every item is genuine: sold by MyCarRepair or by sellers we check. We deliver, and you pay with cash or mobile money when it arrives.
       </InlineNotice>
     </Screen>
   );

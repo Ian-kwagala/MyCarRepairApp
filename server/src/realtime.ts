@@ -85,17 +85,21 @@ function deepLink(event: RealtimeEvent, p: RealtimePayload): string | undefined 
   // An SOS opens the full-screen accept/decline screen; a booking opens the job.
   if (event === 'new_job_pushed') return p.sos ? `/mechanic/incoming/${p.jobId}` : `/mechanic/job/${p.jobId}`;
   if (event === 'quote_updated') return `/mechanic/job/${p.jobId}`;
+  if (p.forMechanic) return `/mechanic/job/${p.jobId}`;
   if (event === 'new_quote_alert' && p.quoteId) return `/quote/${p.quoteId}`;
   if (event === 'job_finished') return `/job/${p.jobId}/receipt`;
   return `/job/${p.jobId}`;
 }
 
-/** Emit to user_<id> rooms; users without a live socket get a push instead (§8). */
-export function emitTo(userIds: number[], event: RealtimeEvent, payload: RealtimePayload) {
+/**
+ * Emit to user_<id> rooms; users without a live socket get a push instead (§8). `push: false` keeps it in-app
+ * only (e.g. an upcoming booking's details changing: bookings stay quiet until their reminders).
+ */
+export function emitTo(userIds: number[], event: RealtimeEvent, payload: RealtimePayload, opts: { push?: boolean } = {}) {
   const ids = [...new Set(userIds)];
   if (!ids.length) return;
   io?.to(ids.map((id) => `user_${id}`)).emit(event, payload);
-  const text = pushText(event, payload);
+  const text = opts.push === false ? null : pushText(event, payload);
   const offline = ids.filter((id) => !connected.has(id));
   if (text && offline.length) {
     void sendPush(

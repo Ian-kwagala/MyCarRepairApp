@@ -11,10 +11,11 @@ import * as Print from 'expo-print';
 import { Platform } from 'react-native';
 
 import {
-  ARRIVAL_CHECKLIST,
-  BOOKING_CHECKLIST,
   DEFAULT_CONFIG,
+  DEFAULT_JOB_STEPS,
   DISPATCH,
+  JOB_STEP_MAX,
+  MAX_JOB_STEPS,
   MAX_PHOTOS,
   SERVICE_TYPE_MAX,
 } from '@/constants/config';
@@ -36,7 +37,7 @@ import type {
 import { persistPhoto } from '@/services/media';
 import { firstName, formatUGX, normalizePhone, startOfDay, toISODate } from '@/utils/format';
 import { distanceKm, etaMinutes, etaRange } from '@/utils/geo';
-import { ACTIVE_STATUSES, composeFeedback, computeTotals, progress } from '@/utils/jobs';
+import { ACTIVE_STATUSES, composeFeedback, computeTotals, progress, stepsFor } from '@/utils/jobs';
 import { receiptHtml } from '@/utils/receipt';
 
 import { ApiError, Errors } from '../errors';
@@ -44,6 +45,7 @@ import type {
   ApiClient,
   BookingInput,
   DiagnosticInput,
+  HandoverInput,
   EarningsRange,
   ForgotPasswordResult,
   JobScope,
@@ -243,6 +245,7 @@ export class LocalApiClient implements ApiClient {
         fullName: mech.full_name,
         phone: isCounterparty ? mech.phone : null,
         garageName: mech.garage_name,
+        garageLocation: mech.garage_location,
         rating: mechanicRating(db, mech.id),
         // location only while the job is live (§13.1: sharing stops when the job completes)
         locationLat: assigned && isCounterparty ? mech.location_lat : null,
@@ -271,8 +274,20 @@ export class LocalApiClient implements ApiClient {
     const extra = db.job_extras.find((e) => e.job_id === row.id);
     job.scheduledDate = extra?.scheduled_date ?? null;
     job.notes = extra?.notes ?? null;
+    // The pickup address stays between the owner and the assigned mechanic.
+    job.handover =
+      extra?.handover && isCounterparty
+        ? { mode: extra.handover, pickupAddress: extra.pickup_address ?? null, pickupLat: extra.pickup_lat ?? null, pickupLng: extra.pickup_lng ?? null }
+        : null;
     if (opts.from !== undefined) job.distanceKm = jobDistance(db, row, opts.from);
     return job;
+  }
+
+  /** Adds the starting steps for the job's service (its row in DEFAULT_JOB_STEPS) to its checklist. */
+  private addSteps(db: LocalDb, row: JobRow) {
+    for (const t of stepsFor(row.service_type, DEFAULT_JOB_STEPS)) {
+      db.job_checklists.push({ id: nextId(db, 'job_checklists'), job_id: row.id, task_description: t, is_completed: false, photo_url: null, completed_at: null });
+    }
   }
 
   /** The current service fee (admin-set value if present, otherwise the default). */
@@ -588,9 +603,7 @@ export class LocalApiClient implements ApiClient {
     const { job, targets, payload } = await tx((db) => {
       const u = this.requireRole(db, 'owner');
       const row = this.insertJob(db, u, input.vehicleId, input.serviceType, false);
-      for (const t of BOOKING_CHECKLIST) {
-        db.job_checklists.push({ id: nextId(db, 'job_checklists'), job_id: row.id, task_description: t, is_completed: false, photo_url: null, completed_at: null });
-      }
+      this.addSteps(db, row);
       db.job_extras.push({ job_id: row.id, scheduled_date: input.scheduledDate, notes: input.notes?.trim() || null, photo: null });
       return {
         job: this.expand(db, row, u),
@@ -903,13 +916,16 @@ export class LocalApiClient implements ApiClient {
       if (row.status !== 'accepted') throw Errors.conflict('INVALID_STATE', 'You have already marked arrival.');
       row.status = 'fixing';
       this.touch(row);
-      // Jobs without a checklist yet (SOS and diagnostics) get the standard arrival checklist.
-      if (!db.job_checklists.some((c) => c.job_id === row.id)) {
-        for (const t of ARRIVAL_CHECKLIST) {
-          db.job_checklists.push({ id: nextId(db, 'job_checklists'), job_id: row.id, task_description: t, is_completed: false, photo_url: null, completed_at: null });
-        }
-      }
-      return { job: this.expand(db, row, u, { from: null }), ownerId: row.owner_id, summary: `${firstName(u.full_name)} reached your car` };
+      // Jobs without a checklist yet (SOS and diagnostics) get the steps for their service now.
+      if (!db.job_checklists.some((c) => c.job_id === row.id)) this.addSteps(db, row);
+      const extra = db.job_extras.find((e) => e.job_id === row.id);
+      const who = firstName(u.full_name);
+      const summary = !extra?.scheduled_date
+        ? `${who} reached your car`
+        : extra.handover === 'pickup'
+          ? `${who} collected your car`
+          : `Your car is checked in at ${u.garage_name || who}`;
+      return { job: this.expand(db, row, u, { from: null }), ownerId: row.owner_id, summary };
     });
     await emitTo([out.ownerId], 'job_progress_update', { jobId, summary: out.summary });
     return out.job;
@@ -939,6 +955,53 @@ export class LocalApiClient implements ApiClient {
       { notify: input.isCompleted },
     );
     return out.item;
+  }
+
+  /** Mechanic adds a step this job needs beyond its service's usual steps; the owner's checklist updates. */
+  async addTask(jobId: number, description: string): Promise<ChecklistItem> {
+    const text = description.trim().replace(/\s+/g, ' ');
+    if (text.length < 3) throw Errors.validation('Describe the step (at least 3 letters).');
+    if (text.length > JOB_STEP_MAX) throw Errors.validation(`Keep the step under ${JOB_STEP_MAX} characters.`);
+    const out = await tx((db) => {
+      const u = this.requireRole(db, 'mechanic');
+      const row = this.assignedJob(db, u, jobId);
+      if (!['accepted', 'fixing'].includes(row.status)) throw Errors.unprocessable('INVALID_STATE', 'Steps can only be added to a job in progress.');
+      if (db.job_checklists.filter((c) => c.job_id === row.id).length >= MAX_JOB_STEPS) {
+        throw Errors.unprocessable('TOO_MANY_STEPS', `A job can have at most ${MAX_JOB_STEPS} steps.`);
+      }
+      const task = { id: nextId(db, 'job_checklists'), job_id: row.id, task_description: text, is_completed: false, photo_url: null, completed_at: null };
+      db.job_checklists.push(task);
+      this.touch(row);
+      return { item: toChecklistItem(task), ownerId: row.owner_id };
+    });
+    await emitTo([out.ownerId], 'task_update', { jobId, taskId: out.item.id, summary: `New step: ${out.item.taskDescription}` }, { notify: false });
+    return out.item;
+  }
+
+  /** Owner says how a booked car reaches the mechanic; the mechanic sees it in the app (no notification). */
+  async setHandover(jobId: number, input: HandoverInput): Promise<Job> {
+    const pickup = input.mode === 'pickup';
+    const address = input.pickupAddress?.trim() ?? '';
+    if (pickup && address.length < 5) throw Errors.validation('Enter where the mechanic should collect the car (area, street, landmark).');
+    const out = await tx((db) => {
+      const u = this.requireRole(db, 'owner');
+      const row = db.jobs.find((j) => j.id === jobId && j.owner_id === u.id);
+      if (!row) throw Errors.notFound('Job');
+      const extra = db.job_extras.find((e) => e.job_id === row.id);
+      if (row.sos_active || !extra?.scheduled_date) throw Errors.unprocessable('NOT_A_BOOKING', 'Only booked services have a drop-off or pickup.');
+      if (!['pending', 'accepted'].includes(row.status)) throw Errors.unprocessable('INVALID_STATE', 'The mechanic already has your car.');
+      extra.handover = input.mode;
+      extra.pickup_address = pickup ? address : null;
+      extra.pickup_lat = pickup ? (input.lat ?? null) : null;
+      extra.pickup_lng = pickup ? (input.lng ?? null) : null;
+      this.touch(row);
+      return { job: this.expand(db, row, u), mechanicId: row.mechanic_id, name: u.full_name };
+    });
+    if (out.mechanicId) {
+      const summary = pickup ? `Collect the car from ${address}` : `${firstName(out.name)} will bring the car to your garage`;
+      await emitTo([out.mechanicId], 'appointment_update', { jobId, summary, forMechanic: true }, { notify: false });
+    }
+    return out.job;
   }
 
   /** Mechanic proposes a part with price and photos; the owner is alerted to approve or reject it. */

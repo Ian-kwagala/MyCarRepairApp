@@ -61,6 +61,8 @@ export interface Vehicle {
 /** The mechanic's public details as attached to a job the owner can see. */
 export type JobMechanic = Pick<User, 'id' | 'fullName' | 'phone' | 'garageName'> & {
   rating: number;
+  /** Where the garage is (free text), for owners who bring the car in. */
+  garageLocation?: string | null;
   // Revealed only to the counter-party of an accepted job (§13.1), for the live map.
   locationLat?: number | null;
   locationLng?: number | null;
@@ -103,6 +105,19 @@ export interface Job {
   // see README "Open questions".
   scheduledDate?: string | null;
   notes?: string | null;
+  /** Bookings: how the car reaches the mechanic, chosen by the owner after a mechanic accepts (null = not yet). */
+  handover?: BookingHandover | null;
+}
+
+/** Booking handover: the owner drives the car to the garage, or the mechanic collects it from an address. */
+export type HandoverMode = 'drop_off' | 'pickup';
+
+/** The owner's handover choice. The pickup address is only shared with the owner and the assigned mechanic. */
+export interface BookingHandover {
+  mode: HandoverMode;
+  pickupAddress: string | null;
+  pickupLat: number | null;
+  pickupLng: number | null;
 }
 
 /** One task on a job's checklist, ticked off by the mechanic (optionally with a photo). */
@@ -112,7 +127,10 @@ export interface ChecklistItem {
   jobId: number;
   taskDescription: string;
   isCompleted: boolean;
+  /** Proof for the step: a photo or a short video (see `proofKind`). */
   photoUrl: string | null;
+  /** What `photoUrl` points to; null when there is no proof yet. */
+  proofKind?: 'photo' | 'video' | null;
   completedAt: string | null;
 }
 
@@ -174,7 +192,16 @@ export interface Product {
   stock: number;
   warrantyMonths: number | null;
   photos: string[];
+  /** The seller listing it (checked by MyCarRepair), or null when MyCarRepair sells it itself. */
+  seller: ProductSeller | null;
   createdAt: string;
+}
+
+/** Public details of a marketplace seller, as shown on their products. */
+export interface ProductSeller {
+  id: number;
+  shopName: string;
+  location: string | null;
 }
 
 /**
@@ -229,7 +256,7 @@ export interface Earnings {
   payouts: { jobId: number; serviceType: string; vehicle: string; amount: number; date: string }[];
 }
 
-/** A locally picked photo, before upload. */
+/** A picked photo (or, for job-step proof, a short video) waiting to be uploaded. `type` is its MIME type. */
 export interface LocalPhoto {
   uri: string;
   name: string;

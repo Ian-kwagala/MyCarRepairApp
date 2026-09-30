@@ -1,7 +1,8 @@
 // Delivers camera photos that Android separated from the app. On phones with little memory, Android may close the
 // app while the camera app is in front; the photo then arrives after the app restarts (or its screen is rebuilt),
 // with no screen waiting for it. This component, mounted while signed in, recovers such photos and sends them
-// where they belong: task proof straight to the job card, form photos back into that screen's PhotoPicker.
+// where they belong: task proof (a photo or a recorded video) straight to the job card, form photos back into that
+// screen's PhotoPicker.
 import { router, usePathname, type Href } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -39,7 +40,7 @@ export function CameraRecovery() {
           await api.updateTask(purpose.taskId, { isCompleted: true, photo });
           void queryClient.invalidateQueries({ queryKey: ['job', purpose.jobId] });
           void queryClient.invalidateQueries({ queryKey: ['mechanic'] });
-          toast({ title: 'Photo saved', body: purpose.task, tone: 'success' });
+          toast({ title: photo.type.startsWith('video/') ? 'Video saved' : 'Photo saved', body: purpose.task, tone: 'success' });
           const card = `/mechanic/job/${purpose.jobId}`;
           if (here.current !== card) router.push(card as Href);
           return;

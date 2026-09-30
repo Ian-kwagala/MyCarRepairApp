@@ -1,6 +1,7 @@
+// Environment configuration (secrets come from the environment, never the repo — §6 task 9).
 import { existsSync } from 'node:fs';
 
-// Environment configuration (secrets come from the environment, never the repo — §6 task 9).
+import { VIDEO_MAX_MB } from '@/constants/config';
 
 /** Reads a required variable, using `fallback` when given (development defaults); throws when neither is set. */
 function required(name: string, fallback?: string): string {
@@ -31,6 +32,8 @@ export const config = {
   /** Login attempts per minute per IP (blueprint §13.1 says 5). */
   loginRateLimit: Number(process.env.LOGIN_RATE_LIMIT ?? 5),
   maxUploadBytes: 5 * 1024 * 1024,
+  /** Largest video proof for a job step (the app records at most VIDEO_MAX_SECONDS). */
+  maxVideoBytes: VIDEO_MAX_MB * 1024 * 1024,
   /**
    * Firebase service-account key for push notifications (FCM HTTP v1): the key file's JSON, the same JSON
    * base64-encoded, or a path to the file. Without the variable, a Render secret file named firebase-key.json

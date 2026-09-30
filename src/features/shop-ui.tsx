@@ -1,12 +1,13 @@
-// Building blocks for the owner's Shop screens (marketplace of genuine parts and accessories): product cards,
-// the quantity stepper, order status pills and cards, the order progress timeline and the header cart button.
+// Building blocks for the owner's Shop screens (marketplace of genuine parts and accessories from MyCarRepair and
+// checked sellers): product cards, the genuine/seller line, the quantity stepper, order status pills and cards, the
+// order progress timeline and the header cart button.
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Card, IconButton, Row, StatusPill, Text } from '@/components';
-import { Check, Minus, Package, Plus, ShieldCheck, ShoppingCart } from '@/components/icons';
-import type { Order, OrderStatus, Product } from '@/models';
+import { Check, Minus, Package, Plus, ShieldCheck, ShoppingCart, Store } from '@/components/icons';
+import type { Order, OrderStatus, Product, ProductSeller } from '@/models';
 import { useCartCount } from '@/store/cart';
 import { Font, Radius, Space, Touch, useColors } from '@/theme';
 import { formatDate, formatUGX } from '@/utils/format';
@@ -38,9 +39,9 @@ export function ProductCard({ product }: { product: Product }) {
         <Text variant="bodyStrong" numberOfLines={2}>
           {product.name}
         </Text>
-        {product.brand ? (
+        {product.brand || product.seller ? (
           <Text variant="caption" numberOfLines={1}>
-            {product.brand}
+            {[product.brand, product.seller?.shopName].filter(Boolean).join(' · ')}
           </Text>
         ) : null}
         <Text style={{ fontFamily: Font.bold, fontSize: 15, color: c.text, marginTop: 2 }}>{formatUGX(product.price)}</Text>
@@ -49,16 +50,31 @@ export function ProductCard({ product }: { product: Product }) {
   );
 }
 
-/** "Genuine · 6-month warranty" line shown on product pages. */
-export function GenuineBadge({ warrantyMonths }: { warrantyMonths: number | null }) {
+/**
+ * "Genuine, sold by MyCarRepair · 6-month warranty" on product pages; for a marketplace seller's product,
+ * "Checked by MyCarRepair" plus the seller's shop and where it is.
+ */
+export function GenuineBadge({ warrantyMonths, seller }: { warrantyMonths: number | null; seller?: ProductSeller | null }) {
   const c = useColors();
+  const warranty = warrantyMonths ? ` · ${warrantyMonths}-month warranty` : '';
   return (
-    <Row gap={6}>
-      <ShieldCheck size={16} color={c.success} />
-      <Text variant="caption" style={{ color: c.success, fontFamily: Font.semibold }}>
-        Genuine, sold by MyCarRepair{warrantyMonths ? ` · ${warrantyMonths}-month warranty` : ''}
-      </Text>
-    </Row>
+    <View style={{ gap: 4 }}>
+      <Row gap={6}>
+        <ShieldCheck size={16} color={c.success} />
+        <Text variant="caption" style={{ color: c.success, fontFamily: Font.semibold, flex: 1 }}>
+          {seller ? `Genuine, checked by MyCarRepair${warranty}` : `Genuine, sold by MyCarRepair${warranty}`}
+        </Text>
+      </Row>
+      {seller ? (
+        <Row gap={6}>
+          <Store size={16} color={c.textMuted} />
+          <Text variant="caption" style={{ flex: 1 }}>
+            Sold by {seller.shopName}
+            {seller.location ? ` · ${seller.location}` : ''}. MyCarRepair delivers it and takes the payment.
+          </Text>
+        </Row>
+      ) : null}
+    </View>
   );
 }
 

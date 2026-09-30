@@ -1,6 +1,7 @@
-// Shop (marketplace) API for car owners: browse genuine parts and accessories, place orders (cash or mobile money on
-// delivery or at pickup), follow and cancel them. Prices and totals always come from the database, never the app,
-// and stock is taken atomically so two owners can't buy the last item twice.
+// Shop (marketplace) API for car owners: browse genuine parts and accessories (from MyCarRepair and checked
+// marketplace sellers), place orders (cash or mobile money on delivery or at pickup), follow and cancel them. Prices
+// and totals always come from the database, never the app, and stock is taken atomically so two owners can't buy
+// the last item twice.
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -12,7 +13,7 @@ import { one, pool, query, tx } from '../db';
 import { E } from '../errors';
 import { toOrder, toProduct } from '../mappers';
 import { baseUrl } from '../media';
-import { changeOrderStatus, loadOrders, shopSettings } from '../shop';
+import { changeOrderStatus, commissionPercent, loadOrders, PRODUCT_SELECT, SELLABLE, shopSettings } from '../shop';
 import type { OrderRow, ProductRow, VehicleRow } from '../types';
 
 export const shopRouter = Router();
@@ -35,25 +36,25 @@ shopRouter.get('/products', async (req, res) => {
     .parse(req.query);
   const params: unknown[] = [];
   const arg = (v: unknown) => `$${params.push(v)}`;
-  const where = ['is_active'];
-  if (q.category) where.push(`category = ${arg(q.category)}`);
+  const where = [SELLABLE];
+  if (q.category) where.push(`p.category = ${arg(q.category)}`);
   if (q.q) {
     const t = arg(like(q.q));
-    where.push(`(name ILIKE ${t} OR brand ILIKE ${t} OR part_number ILIKE ${t} OR compatible_with ILIKE ${t} OR description ILIKE ${t})`);
+    where.push(`(p.name ILIKE ${t} OR p.brand ILIKE ${t} OR p.part_number ILIKE ${t} OR p.compatible_with ILIKE ${t} OR p.description ILIKE ${t} OR s.shop_name ILIKE ${t})`);
   }
   if (q.vehicleId) {
     const v = await one<VehicleRow>(`SELECT * FROM vehicles WHERE id = $1 AND owner_id = $2`, [q.vehicleId, me(req).id]);
     if (!v) throw E.notFound('Vehicle');
-    where.push(`(COALESCE(compatible_with, '') = '' OR compatible_with ILIKE ${arg(like(v.make))} OR compatible_with ILIKE ${arg(like(v.model))})`);
+    where.push(`(COALESCE(p.compatible_with, '') = '' OR p.compatible_with ILIKE ${arg(like(v.make))} OR p.compatible_with ILIKE ${arg(like(v.model))})`);
   }
-  const rows = await query<ProductRow>(`SELECT * FROM products WHERE ${where.join(' AND ')} ORDER BY (stock > 0) DESC, created_at DESC LIMIT 200`, params);
+  const rows = await query<ProductRow>(`${PRODUCT_SELECT} WHERE ${where.join(' AND ')} ORDER BY (p.stock > 0) DESC, p.created_at DESC LIMIT 200`, params);
   const base = baseUrl(req);
   res.json(rows.map((r) => toProduct(base, r)));
 });
 
-/** GET /shop/products/:id — one active product. */
+/** GET /shop/products/:id — one product that is on sale. */
 shopRouter.get('/products/:id', async (req, res) => {
-  const row = await one<ProductRow>(`SELECT * FROM products WHERE id = $1 AND is_active`, [Number(req.params.id)]);
+  const row = await one<ProductRow>(`${PRODUCT_SELECT} WHERE p.id = $1 AND ${SELLABLE}`, [Number(req.params.id)]);
   if (!row) throw E.notFound('Product');
   res.json(toProduct(baseUrl(req), row));
 });
@@ -86,17 +87,26 @@ shopRouter.post('/orders', async (req, res) => {
   for (const i of b.items) wanted.set(i.productId, Math.min(MAX_ORDER_QUANTITY, (wanted.get(i.productId) ?? 0) + i.quantity));
 
   const orderId = await tx(async (db) => {
-    // Lock in id order so concurrent orders for the same products can't deadlock.
-    const products = (await db.query<ProductRow>(`SELECT * FROM products WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE`, [[...wanted.keys()]])).rows;
+    // Lock in id order so concurrent orders for the same products can't deadlock. "sellable" applies the same
+    // rules as the shop listing (active, checked, and the seller's shop open).
+    const products = (
+      await db.query<ProductRow & { sellable: boolean }>(
+        `SELECT p.*, ${SELLABLE} AS sellable FROM products p LEFT JOIN sellers s ON s.id = p.seller_id
+         WHERE p.id = ANY($1::int[]) ORDER BY p.id FOR UPDATE OF p`,
+        [[...wanted.keys()]],
+      )
+    ).rows;
     const lines = [...wanted].map(([productId, quantity]) => {
       const p = products.find((x) => x.id === productId);
-      if (!p || !p.is_active) throw E.conflict('PRODUCT_UNAVAILABLE', 'An item in your cart is no longer sold. Remove it and try again.');
+      if (!p || !p.sellable) throw E.conflict('PRODUCT_UNAVAILABLE', 'An item in your cart is no longer sold. Remove it and try again.');
       if (p.stock < quantity) {
         throw E.conflict('OUT_OF_STOCK', p.stock ? `Only ${p.stock} × ${p.name} left in stock.` : `${p.name} is sold out.`);
       }
       return { product: p, quantity, unitPrice: Number(p.price) };
     });
     const settings = await shopSettings(db);
+    // MyCarRepair's cut of seller items, fixed on each line at ordering time (its own products: 0).
+    const commission = await commissionPercent(db);
     const totals = orderTotals(lines, b.fulfilment, settings.deliveryFee);
     for (const l of lines) await db.query(`UPDATE products SET stock = stock - $2, updated_at = now() WHERE id = $1`, [l.product.id, l.quantity]);
     const o = (
@@ -119,13 +129,10 @@ shopRouter.post('/orders', async (req, res) => {
       )
     ).rows[0]!;
     for (const l of lines) {
-      await db.query(`INSERT INTO order_items (order_id, product_id, name, unit_price, quantity) VALUES ($1, $2, $3, $4, $5)`, [
-        o.id,
-        l.product.id,
-        l.product.name,
-        l.unitPrice,
-        l.quantity,
-      ]);
+      await db.query(
+        `INSERT INTO order_items (order_id, product_id, name, unit_price, quantity, seller_id, commission_percent) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [o.id, l.product.id, l.product.name, l.unitPrice, l.quantity, l.product.seller_id, l.product.seller_id ? commission : 0],
+      );
     }
     return o.id;
   });

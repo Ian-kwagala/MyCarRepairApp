@@ -1,7 +1,9 @@
 /// <reference types="jest" />
 // Unit tests for the pure helper functions: money formatting, job stages, billing, the finish lock,
-// review tags, phone numbers, service-due dates, distances, date grouping and shop order rules.
-import { composeFeedback, canFinish, computeTotals, parseFeedback, serviceDueInDays, stageIndex } from '@/utils/jobs';
+// review tags, phone numbers, service-due dates, distances, date grouping, shop order rules, job steps per service
+// and booking dates.
+import { ARRIVAL_CHECKLIST, DEFAULT_JOB_STEPS } from '@/constants/config';
+import { bookingDay, composeFeedback, canFinish, computeTotals, isUpcomingBooking, parseFeedback, reminderTimes, serviceDueInDays, stageIndex, stagesFor, stepsFor } from '@/utils/jobs';
 import { dateGroup, formatAmountInput, formatUGX, normalizePhone, parseAmount } from '@/utils/format';
 import { distanceKm } from '@/utils/geo';
 import { nextOrderStatuses, orderSteps, orderTotals } from '@/utils/shop';
@@ -95,5 +97,34 @@ describe('shop orders', () => {
     expect(nextOrderStatuses('out_for_delivery', 'delivery')).toEqual(['delivered', 'cancelled']);
     expect(nextOrderStatuses('delivered', 'delivery')).toEqual([]);
     expect(nextOrderStatuses('cancelled', 'pickup')).toEqual([]);
+  });
+});
+
+describe('job steps and bookings', () => {
+  it('starts each kind of job with its own steps', () => {
+    expect(stepsFor('Oil Change', DEFAULT_JOB_STEPS)).toEqual([...DEFAULT_JOB_STEPS['Oil Change']!]);
+    expect(stepsFor('flat tire', DEFAULT_JOB_STEPS)).toEqual([...DEFAULT_JOB_STEPS['Flat Tire']!]);
+    expect(stepsFor('Diagnostic: Engine Light, Overheating', DEFAULT_JOB_STEPS)).toEqual([...DEFAULT_JOB_STEPS.Diagnostics!]);
+    expect(stepsFor('Windscreen repair', DEFAULT_JOB_STEPS)).toEqual([...ARRIVAL_CHECKLIST]);
+    expect(stepsFor('Oil Change', { 'Oil Change': ['Only step'] })).toEqual(['Only step']);
+  });
+  it('knows when a booking is and keeps upcoming ones quiet', () => {
+    const now = new Date(2026, 8, 30, 10, 0); // 30 Sep 2026, 10:00 local
+    expect(bookingDay('2026-09-29', now)).toBe('past');
+    expect(bookingDay('2026-09-30', now)).toBe('today');
+    expect(bookingDay('2026-10-01', now)).toBe('tomorrow');
+    expect(bookingDay('2026-10-05', now)).toBe('later');
+    const booking = { status: 'accepted' as const, sosActive: false, scheduledDate: '2026-10-05' };
+    expect(isUpcomingBooking(booking, now)).toBe(true);
+    expect(isUpcomingBooking({ ...booking, scheduledDate: '2026-09-30' }, now)).toBe(false);
+    expect(isUpcomingBooking({ ...booking, status: 'fixing' }, now)).toBe(false);
+    expect(isUpcomingBooking({ ...booking, sosActive: true }, now)).toBe(false);
+    expect(stagesFor({ scheduledDate: '2026-10-05' })[2]).toBe('Check-in');
+    expect(stagesFor({ scheduledDate: null })[2]).toBe('Arrived');
+  });
+  it('reminds at 6 pm the evening before and 7 am on the day', () => {
+    const { eve, day } = reminderTimes('2026-10-01');
+    expect([eve.getFullYear(), eve.getMonth(), eve.getDate(), eve.getHours()]).toEqual([2026, 8, 30, 18]);
+    expect([day.getFullYear(), day.getMonth(), day.getDate(), day.getHours()]).toEqual([2026, 9, 1, 7]);
   });
 });

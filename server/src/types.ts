@@ -92,8 +92,42 @@ export interface ProductRow {
   warranty_months: number | null;
   photos: string | null;
   is_active: boolean;
+  /** Marketplace seller listing it; null = sold by MyCarRepair. */
+  seller_id: number | null;
+  /** Seller listings: 'pending' until staff check them; only 'approved' products are sold. */
+  review_status: 'pending' | 'approved' | 'rejected';
+  review_note: string | null;
   created_at: Date;
   updated_at: Date;
+  /** The seller's shop name and location, joined in when listing products (not columns). */
+  seller_shop?: string | null;
+  seller_location?: string | null;
+}
+
+/** sellers: marketplace sellers who list products on the seller portal (additive table). */
+export interface SellerRow {
+  id: number;
+  shop_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  password: string;
+  location: string | null;
+  about: string | null;
+  payout_number: string | null;
+  status: 'pending' | 'active' | 'suspended';
+  session_version: number;
+  created_at: Date;
+}
+
+/** seller_payouts: money sent to a seller for delivered items (additive table). */
+export interface SellerPayoutRow {
+  id: number;
+  seller_id: number;
+  amount: number;
+  method: string;
+  reference: string | null;
+  created_at: Date;
 }
 
 /** orders: shop orders (additive table). */
@@ -123,6 +157,11 @@ export interface OrderItemRow {
   name: string;
   unit_price: number;
   quantity: number;
+  seller_id: number | null;
+  /** MyCarRepair's cut of this line when it was ordered (0 for MyCarRepair's own products). */
+  commission_percent: number;
+  seller_status: 'new' | 'ready' | 'collected';
+  payout_id: number | null;
   /** First photo of the product, joined in when listing items (not a column). */
   photos?: string | null;
 }

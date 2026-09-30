@@ -1,7 +1,9 @@
+// Mechanic API: going online, the job boards, accepting and declining, arrival or check-in, job steps (ticking with
+// photo or video proof, adding steps), part quotes, finishing with the lock rules, earnings and reviews.
 import { Router } from 'express';
 import { z } from 'zod';
 
-import { ARRIVAL_CHECKLIST, MAX_PHOTOS } from '@/constants/config';
+import { JOB_STEP_MAX, MAX_JOB_STEPS, MAX_PHOTOS } from '@/constants/config';
 import { firstName, formatUGX } from '@/utils/format';
 import { etaMinutes, distanceKm } from '@/utils/geo';
 import { computeTotals } from '@/utils/jobs';
@@ -9,9 +11,9 @@ import { computeTotals } from '@/utils/jobs';
 import { me, requireAuth, requireRole } from '../auth';
 import { pool, query, tx, type Db } from '../db';
 import { E } from '../errors';
-import { expandAll, expandJob, mechanicRating, onlineMechanicIds, serviceFee, sosTargets } from '../jobs';
+import { addDefaultSteps, expandAll, expandJob, mechanicRating, onlineMechanicIds, serviceFee, sosTargets } from '../jobs';
 import { toChecklistItem, toQuote, toReview, toUser } from '../mappers';
-import { baseUrl, filesOf, storeFiles, upload } from '../media';
+import { baseUrl, filesOf, storeFiles, storeProof, upload, uploadProof } from '../media';
 import { emitTo } from '../realtime';
 import type { ChecklistRow, JobRow, QuoteRow, ReviewRow, UserRow } from '../types';
 
@@ -101,7 +103,7 @@ mechanicRouter.post('/jobs/:id/accept', requireRole('mechanic'), async (req, res
       others: (await onlineMechanicIds(db)).filter((id) => id !== u.id),
       summary: row.sos_active
         ? `${u.full_name} is on the way${km != null ? ` · ${etaMinutes(km)} min` : ''}`
-        : `Booking accepted by ${u.garage_name || u.full_name}`,
+        : `Booking accepted by ${u.garage_name || u.full_name}. Tell them how the car gets there.`,
     };
   });
   emitTo([out.row.owner_id], out.row.sos_active ? 'job_taken' : 'appointment_update', { jobId, summary: out.summary });
@@ -128,7 +130,10 @@ mechanicRouter.post('/jobs/:id/decline', requireRole('mechanic'), async (req, re
   res.status(204).end();
 });
 
-/** POST /mechanic/jobs/:id/arrived — status fixing; the arrival checklist is activated. */
+/**
+ * POST /mechanic/jobs/:id/arrived — status fixing: the mechanic reached the car (SOS, diagnostics) or has the
+ * booked car (dropped off at the garage or collected). The job's steps for its service are added if it has none.
+ */
 mechanicRouter.post('/jobs/:id/arrived', requireRole('mechanic'), async (req, res) => {
   const u = me(req);
   const out = await tx(async (db) => {
@@ -136,45 +141,81 @@ mechanicRouter.post('/jobs/:id/arrived', requireRole('mechanic'), async (req, re
     if (row.status !== 'accepted') throw E.conflict('INVALID_STATE', 'You have already marked arrival.');
     const updated = (await db.query<JobRow>(`UPDATE jobs SET status = 'fixing', updated_at = now() WHERE id = $1 RETURNING *`, [row.id])).rows[0];
     const has = await db.query(`SELECT 1 FROM job_checklists WHERE job_id = $1 LIMIT 1`, [row.id]);
-    if (!has.rowCount) {
-      for (const t of ARRIVAL_CHECKLIST) await db.query(`INSERT INTO job_checklists (job_id, task_description) VALUES ($1, $2)`, [row.id, t]);
-    }
-    return { job: await expandJob(db, baseUrl(req), updated, u), ownerId: row.owner_id };
+    if (!has.rowCount) await addDefaultSteps(db, row);
+    const extra = (await db.query<{ scheduled_date: string | null; handover: string | null }>(`SELECT scheduled_date, handover FROM job_extras WHERE job_id = $1`, [row.id])).rows[0];
+    const who = firstName(u.full_name);
+    const summary = !extra?.scheduled_date
+      ? `${who} reached your car`
+      : extra.handover === 'pickup'
+        ? `${who} collected your car`
+        : `Your car is checked in at ${u.garage_name || who}`;
+    return { job: await expandJob(db, baseUrl(req), updated, u), ownerId: row.owner_id, summary };
   });
-  emitTo([out.ownerId], 'job_progress_update', { jobId: out.job.id, summary: `${firstName(u.full_name)} reached your car` });
+  emitTo([out.ownerId], 'job_progress_update', { jobId: out.job.id, summary: out.summary });
   res.json(out.job);
 });
 
-/** PATCH /mechanic/tasks/:taskId (multipart {isCompleted, photo?}) — photo proof in job_checklists.photo_url (FR15). */
-mechanicRouter.patch('/tasks/:taskId', requireRole('mechanic'), upload.fields([{ name: 'photo', maxCount: 1 }]), async (req, res) => {
+/**
+ * POST /mechanic/jobs/:id/tasks {description} — adds a step this job needs beyond its service's usual steps
+ * (before or during the work). The owner's checklist updates live.
+ */
+mechanicRouter.post('/jobs/:id/tasks', requireRole('mechanic'), async (req, res) => {
   const u = me(req);
-  const isCompleted = z
-    .union([z.boolean(), z.enum(['true', 'false'])])
-    .transform((v) => v === true || v === 'true')
-    .parse(req.body?.isCompleted);
+  const { description } = z.object({ description: z.string().trim().min(3, 'Describe the step (at least 3 letters).').max(JOB_STEP_MAX) }).parse(req.body);
   const out = await tx(async (db) => {
-    const task = (await db.query<ChecklistRow>(`SELECT * FROM job_checklists WHERE id = $1 FOR UPDATE`, [Number(req.params.taskId)])).rows[0];
-    if (!task) throw E.notFound('Task');
-    const job = await assignedJob(db, u, task.job_id);
-    if (job.status !== 'fixing') throw E.unprocessable('INVALID_STATE', 'Mark "Reached car" before ticking tasks.');
-    const [photo] = await storeFiles(db, u.id, filesOf(req, 'photo'));
-    const updated = (
-      await db.query<ChecklistRow>(
-        `UPDATE job_checklists SET is_completed = $2, completed_at = CASE WHEN $2 THEN now() ELSE NULL END, photo_url = COALESCE($3, photo_url)
-         WHERE id = $1 RETURNING *`,
-        [task.id, isCompleted, photo ?? null],
-      )
-    ).rows[0];
+    const job = await assignedJob(db, u, Number(req.params.id), true);
+    if (!['accepted', 'fixing'].includes(job.status)) throw E.unprocessable('INVALID_STATE', 'Steps can only be added to a job in progress.');
+    const n = Number((await db.query<{ n: string }>(`SELECT COUNT(*) AS n FROM job_checklists WHERE job_id = $1`, [job.id])).rows[0]!.n);
+    if (n >= MAX_JOB_STEPS) throw E.unprocessable('TOO_MANY_STEPS', `A job can have at most ${MAX_JOB_STEPS} steps.`);
+    const task = (await db.query<ChecklistRow>(`INSERT INTO job_checklists (job_id, task_description) VALUES ($1, $2) RETURNING *`, [job.id, description])).rows[0]!;
     await db.query(`UPDATE jobs SET updated_at = now() WHERE id = $1`, [job.id]);
-    const counts = (
-      await db.query<{ done: string; total: string }>(`SELECT COUNT(*) FILTER (WHERE is_completed) AS done, COUNT(*) AS total FROM job_checklists WHERE job_id = $1`, [job.id])
-    ).rows[0];
-    return { updated, job, pct: Math.round((Number(counts.done) / Math.max(1, Number(counts.total))) * 100) };
+    return { task, job };
   });
-  // In-app only (§8): the owner's tracker updates live.
-  emitTo([out.job.owner_id], 'task_update', { jobId: out.job.id, taskId: out.updated.id, summary: `${out.updated.task_description} · ${out.pct}%` });
-  res.json(toChecklistItem(baseUrl(req), out.updated));
+  emitTo([out.job.owner_id], 'task_update', { jobId: out.job.id, taskId: out.task.id, summary: `New step: ${out.task.task_description}` });
+  res.status(201).json(toChecklistItem(baseUrl(req), out.task));
 });
+
+/**
+ * PATCH /mechanic/tasks/:taskId (multipart {isCompleted, photo? | video?}) — proof in job_checklists.photo_url
+ * (FR15): a photo, or a short video of the work.
+ */
+mechanicRouter.patch(
+  '/tasks/:taskId',
+  requireRole('mechanic'),
+  uploadProof.fields([
+    { name: 'photo', maxCount: 1 },
+    { name: 'video', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const u = me(req);
+    const isCompleted = z
+      .union([z.boolean(), z.enum(['true', 'false'])])
+      .transform((v) => v === true || v === 'true')
+      .parse(req.body?.isCompleted);
+    const out = await tx(async (db) => {
+      const task = (await db.query<ChecklistRow>(`SELECT * FROM job_checklists WHERE id = $1 FOR UPDATE`, [Number(req.params.taskId)])).rows[0];
+      if (!task) throw E.notFound('Task');
+      const job = await assignedJob(db, u, task.job_id);
+      if (job.status !== 'fixing') throw E.unprocessable('INVALID_STATE', 'Mark "Reached car" before ticking tasks.');
+      const photo = await storeProof(db, u.id, filesOf(req, 'photo')[0] ?? filesOf(req, 'video')[0]);
+      const updated = (
+        await db.query<ChecklistRow>(
+          `UPDATE job_checklists SET is_completed = $2, completed_at = CASE WHEN $2 THEN now() ELSE NULL END, photo_url = COALESCE($3, photo_url)
+           WHERE id = $1 RETURNING *`,
+          [task.id, isCompleted, photo ?? null],
+        )
+      ).rows[0];
+      await db.query(`UPDATE jobs SET updated_at = now() WHERE id = $1`, [job.id]);
+      const counts = (
+        await db.query<{ done: string; total: string }>(`SELECT COUNT(*) FILTER (WHERE is_completed) AS done, COUNT(*) AS total FROM job_checklists WHERE job_id = $1`, [job.id])
+      ).rows[0];
+      return { updated, job, pct: Math.round((Number(counts.done) / Math.max(1, Number(counts.total))) * 100) };
+    });
+    // In-app only (§8): the owner's tracker updates live.
+    emitTo([out.job.owner_id], 'task_update', { jobId: out.job.id, taskId: out.updated.id, summary: `${out.updated.task_description} · ${out.pct}%` });
+    res.json(toChecklistItem(baseUrl(req), out.updated));
+  },
+);
 
 /** POST /mechanic/jobs/:id/quotes (multipart {partName, price, photos[≤5]}) — is_approved NULL until the owner decides. */
 mechanicRouter.post('/jobs/:id/quotes', requireRole('mechanic'), upload.array('photos', MAX_PHOTOS), async (req, res) => {

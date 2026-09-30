@@ -7,6 +7,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ApiError } from '@/api/errors';
+import { DEFAULT_JOB_STEPS } from '@/constants/config';
 import { LocalApiClient } from '@/api/local/client';
 import type { Session } from '@/api/types';
 
@@ -125,7 +126,10 @@ describe('LocalApiClient business rules', () => {
 
     const arrived = await mech.markArrived(jobId);
     expect(arrived.status).toBe('fixing');
-    expect(arrived.checklist!.map((t) => t.taskDescription)).toEqual(['Initial Inspection', 'Fluid Level Check', 'Diagnostic Scan', 'Safety Test']);
+    // A flat tyre starts with the flat-tyre steps; the mechanic can add one of their own.
+    expect(arrived.checklist!.map((t) => t.taskDescription)).toEqual([...DEFAULT_JOB_STEPS['Flat Tire']!]);
+    const extra = await mech.addTask(jobId, 'Replace valve stem');
+    arrived.checklist!.push(extra);
 
     expect(await code(mech.completeJob(jobId))).toBe('422 JOB_NOT_READY');
     for (const t of arrived.checklist!) await mech.updateTask(t.id, { isCompleted: true });
@@ -159,7 +163,7 @@ describe('LocalApiClient business rules', () => {
   it('guards ownership: other owners cannot see a job', async () => {
     const { owner, v } = await setup();
     const job = await owner.createBooking({ vehicleId: v.id, serviceType: 'Oil Change', scheduledDate: '2999-01-01' });
-    expect(job.checklist).toHaveLength(10);
+    expect(job.checklist!.map((t) => t.taskDescription)).toEqual([...DEFAULT_JOB_STEPS['Oil Change']!]);
     const other = new LocalApiClient();
     await other.register({ fullName: 'Eve', email: 'eve@x.ug', phone: '0701999999', password: 'secret1', role: 'owner' });
     expect(await code(other.getJob(job.id))).toBe('404 NOT_FOUND');

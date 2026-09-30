@@ -81,6 +81,9 @@ export function toJob(r: JobRow): Job {
   };
 }
 
+/** True for stored media paths that are videos (videos keep their container's extension in the key). */
+export const isVideoPath = (path: string | null) => !!path && /\.(mp4|mov|3gp|webm)$/i.test(path);
+
 export function toChecklistItem(base: string, r: ChecklistRow): ChecklistItem {
   return {
     id: r.id,
@@ -88,6 +91,7 @@ export function toChecklistItem(base: string, r: ChecklistRow): ChecklistItem {
     taskDescription: r.task_description,
     isCompleted: r.is_completed,
     photoUrl: mediaUrl(base, r.photo_url),
+    proofKind: r.photo_url ? (isVideoPath(r.photo_url) ? 'video' : 'photo') : null,
     completedAt: iso(r.completed_at),
   };
 }
@@ -130,6 +134,7 @@ export function toProduct(base: string, r: ProductRow): Product {
     stock: r.stock,
     warrantyMonths: r.warranty_months,
     photos: splitPhotos(base, r.photos),
+    seller: r.seller_id ? { id: r.seller_id, shopName: r.seller_shop ?? 'Marketplace seller', location: r.seller_location ?? null } : null,
     createdAt: r.created_at.toISOString(),
   };
 }

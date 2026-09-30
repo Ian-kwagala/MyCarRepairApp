@@ -1,7 +1,8 @@
-// Shop (marketplace) rules shared by the app's API (routes/shop.ts) and the admin console: settings, loading
-// orders with their lines, status changes (with stock returned on cancellation) and the owner's live update.
+// Shop (marketplace) rules shared by the app's API (routes/shop.ts), the admin console and the seller portal:
+// settings (delivery, pickup, commission, listing review), what counts as on sale, loading orders with their lines,
+// status changes (with stock returned on cancellation) and the owner's live update.
 import type { OrderStatus } from '@/models';
-import { DEFAULT_CONFIG } from '@/constants/config';
+import { DEFAULT_COMMISSION_PERCENT, DEFAULT_CONFIG } from '@/constants/config';
 import { nextOrderStatuses, orderStatusLabel } from '@/utils/shop';
 
 import { type Db, query, tx } from './db';
@@ -19,6 +20,37 @@ export async function shopSettings(db?: Db) {
     deliveryFee: Number.isFinite(fee) && fee >= 0 && get('delivery_fee') !== undefined ? fee : DEFAULT_CONFIG.deliveryFee,
     pickupLocation: get('pickup_location') || DEFAULT_CONFIG.pickupLocation,
   };
+}
+
+/** Products with their seller's shop name and location (alias p for products, s for sellers). */
+export const PRODUCT_SELECT = `SELECT p.*, s.shop_name AS seller_shop, s.location AS seller_location FROM products p LEFT JOIN sellers s ON s.id = p.seller_id`;
+
+/**
+ * SQL condition (aliases p, s) for products owners can buy: shown, checked by staff, and — for seller listings —
+ * the seller's shop is open (a suspended or not-yet-approved seller's products disappear from the shop).
+ */
+export const SELLABLE = `(p.is_active AND p.review_status = 'approved' AND (p.seller_id IS NULL OR s.status = 'active'))`;
+
+/** MyCarRepair's commission on seller items, in percent (system_config "commission_percent", default 10). */
+export async function commissionPercent(db?: Db): Promise<number> {
+  const sql = `SELECT value FROM system_config WHERE key = 'commission_percent'`;
+  const row = db ? (await db.query<{ value: string }>(sql)).rows[0] : (await query<{ value: string }>(sql))[0];
+  const n = Number(row?.value);
+  return row && Number.isFinite(n) && n >= 0 && n <= 50 ? n : DEFAULT_COMMISSION_PERCENT;
+}
+
+/** Whether new and changed seller listings wait for staff to check them (system_config "review_listings", default on). */
+export async function reviewListings(db?: Db): Promise<boolean> {
+  const sql = `SELECT value FROM system_config WHERE key = 'review_listings'`;
+  const row = db ? (await db.query<{ value: string }>(sql)).rows[0] : (await query<{ value: string }>(sql))[0];
+  return row?.value !== 'false';
+}
+
+/** A seller's share of an order line: the line total minus MyCarRepair's commission, in whole shillings. */
+export function sellerNet(line: Pick<OrderItemRow, 'unit_price' | 'quantity' | 'commission_percent'>) {
+  const gross = Number(line.unit_price) * line.quantity;
+  const commission = Math.round((gross * Number(line.commission_percent)) / 100);
+  return { gross, commission, net: gross - commission };
 }
 
 /** Orders matching `where` (a SQL condition on alias o) with their lines, newest first. */

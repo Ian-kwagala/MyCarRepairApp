@@ -80,6 +80,11 @@ export function openNavigation(lat: number, lng: number) {
   );
 }
 
+/** Opens Google Maps searching for a place by its written address (e.g. a garage or a pickup address). */
+export function openMapsSearch(address: string) {
+  void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`);
+}
+
 /** Opens the phone dialer with the number filled in. Does nothing if there's no number. */
 export function callPhone(phone: string | null | undefined) {
   if (!phone) return;

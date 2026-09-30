@@ -1,4 +1,5 @@
-// Yes/no confirmation dialog and a camera-or-gallery chooser that work on phones and web.
+// Yes/no confirmation dialog, a camera-or-gallery chooser, and the photo/video/gallery chooser for job-step proof,
+// all working on phones and web.
 import { Alert, Platform } from 'react-native';
 
 /**
@@ -28,6 +29,25 @@ export function choosePhotoSource(title: string): Promise<'camera' | 'library' |
       { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
       { text: 'Gallery', onPress: () => resolve('library') },
       { text: 'Camera', onPress: () => resolve('camera') },
+    ], { cancelable: true, onDismiss: () => resolve(null) });
+  });
+}
+
+/** Where job-step proof comes from: a new photo, a new short video, or something already in the gallery. */
+export type ProofSource = 'photo' | 'video' | 'library';
+
+/**
+ * Asks how to prove a job step: take a photo, record a short video, or pick from the gallery. Resolves null if
+ * dismissed. Android dialogs hold at most three buttons, so there is no Cancel button: tapping outside or Back
+ * cancels. On web the browser's file picker (photos and videos) opens straight away.
+ */
+export function chooseProofSource(title: string, maxSeconds: number): Promise<ProofSource | null> {
+  if (Platform.OS === 'web') return Promise.resolve('library');
+  return new Promise((resolve) => {
+    Alert.alert(title, `Show the work: a photo, or a video of up to ${maxSeconds} seconds.`, [
+      { text: 'Gallery', onPress: () => resolve('library') },
+      { text: 'Video', onPress: () => resolve('video') },
+      { text: 'Photo', onPress: () => resolve('photo') },
     ], { cancelable: true, onDismiss: () => resolve(null) });
   });
 }

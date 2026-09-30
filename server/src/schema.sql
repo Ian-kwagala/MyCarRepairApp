@@ -203,3 +203,57 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INT NOT NULL CHECK (quantity > 0)
 );
 CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);
+
+-- ── Booking handover: after a mechanic accepts a booking, the owner says how the car gets there ────────────
+-- 'drop_off' = the owner drives it to the garage; 'pickup' = the mechanic collects it from pickup_address.
+ALTER TABLE job_extras ADD COLUMN IF NOT EXISTS handover VARCHAR(10) CHECK (handover IN ('drop_off', 'pickup'));
+ALTER TABLE job_extras ADD COLUMN IF NOT EXISTS pickup_address TEXT;
+ALTER TABLE job_extras ADD COLUMN IF NOT EXISTS pickup_lat DECIMAL(9, 6);
+ALTER TABLE job_extras ADD COLUMN IF NOT EXISTS pickup_lng DECIMAL(9, 6);
+
+-- ── Marketplace sellers (Jumia model) ─────────────────────────────────────────────────────────────────────
+-- Independent shops list products on the seller portal (/seller); MyCarRepair checks the listings, takes the
+-- orders and the money, collects from the seller, delivers, and pays the seller their share minus commission.
+-- Sellers are a separate account type: they never sign in to the mobile apps or the /api/v1 routes.
+CREATE TABLE IF NOT EXISTS sellers (
+  id SERIAL PRIMARY KEY,
+  shop_name VARCHAR(100) NOT NULL,
+  contact_name VARCHAR(100) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  password TEXT NOT NULL,
+  location VARCHAR(150),
+  about TEXT,
+  -- Mobile money number payouts are sent to.
+  payout_number VARCHAR(20),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'suspended')),
+  -- Bumped on suspension or password change, which signs the seller out everywhere.
+  session_version INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Products: NULL seller = sold by MyCarRepair itself. Seller listings wait for review before they show.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_id INT REFERENCES sellers (id) ON DELETE SET NULL;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS review_status VARCHAR(10) NOT NULL DEFAULT 'approved'
+  CHECK (review_status IN ('pending', 'approved', 'rejected'));
+ALTER TABLE products ADD COLUMN IF NOT EXISTS review_note TEXT;
+CREATE INDEX IF NOT EXISTS products_seller_idx ON products (seller_id);
+
+-- Money sent to a seller for delivered items (recorded by staff after paying by mobile money or bank).
+CREATE TABLE IF NOT EXISTS seller_payouts (
+  id SERIAL PRIMARY KEY,
+  seller_id INT NOT NULL REFERENCES sellers (id) ON DELETE CASCADE,
+  amount DECIMAL(12, 2) NOT NULL CHECK (amount >= 0),
+  method VARCHAR(20) NOT NULL,
+  reference VARCHAR(100),
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Order lines remember the seller and the commission at ordering time, the seller's progress
+-- (new → ready for collection → collected by MyCarRepair) and the payout that settled them.
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS seller_id INT REFERENCES sellers (id) ON DELETE SET NULL;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS commission_percent DECIMAL(5, 2) NOT NULL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS seller_status VARCHAR(12) NOT NULL DEFAULT 'new'
+  CHECK (seller_status IN ('new', 'ready', 'collected'));
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS payout_id INT REFERENCES seller_payouts (id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS order_items_seller_idx ON order_items (seller_id);

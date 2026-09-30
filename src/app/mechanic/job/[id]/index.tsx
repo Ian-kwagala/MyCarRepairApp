@@ -1,6 +1,6 @@
 // Mechanic's screen for one job. Shows a different view for each stage of the job.
 import { router, useLocalSearchParams } from 'expo-router';
-import { CircleCheck, FileText, Lock, MapPinned, Navigation, Phone, Plus, Share2, Star } from '@/components/icons';
+import { CalendarClock, CircleCheck, Clock, FileText, House, ListPlus, Lock, MapPinned, Navigation, Phone, Plus, Share2, Star, Truck } from '@/components/icons';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -23,25 +23,27 @@ import {
   Section,
   SkeletonList,
   Text,
+  TextField,
   type MapPoint,
 } from '@/components';
+import { JOB_STEP_MAX, VIDEO_MAX_SECONDS } from '@/constants/config';
 import { usePresence } from '@/features/mechanic-presence';
 import { useJob } from '@/hooks/queries';
 import type { ChecklistItem, Job } from '@/models';
-import { callPhone, openNavigation } from '@/services/location';
-import { PermissionDeniedError, pickPhotos } from '@/services/media';
+import { callPhone, openMapsSearch, openNavigation } from '@/services/location';
+import { PermissionDeniedError, pickProof, VideoTooLargeError } from '@/services/media';
 import { queryClient } from '@/services/query-client';
 import { openReceipt, shareReceipt } from '@/services/receipt';
 import { toast } from '@/store/toast';
 import { Space, useColors } from '@/theme';
-import { choosePhotoSource, confirm } from '@/utils/confirm';
+import { chooseProofSource, confirm } from '@/utils/confirm';
 import { formatDate, formatUGX } from '@/utils/format';
 import { distanceKm, etaMinutes, formatKm } from '@/utils/geo';
-import { canFinish, computeTotals, parseFeedback, progress, statusLabel, vehicleLabel } from '@/utils/jobs';
+import { bookingDay, canFinish, computeTotals, parseFeedback, progress, statusLabel, vehicleLabel } from '@/utils/jobs';
 
 /**
- * M3 En route (accepted) → M4 Digital job card (fixing) → completion summary. An open job that hasn't
- * been accepted yet shows its details with an Accept button.
+ * M3 En route (accepted SOS/diagnostic) or the quiet accepted-booking view → M4 Digital job card (fixing) →
+ * completion summary. An open job that hasn't been accepted yet shows its details with an Accept button.
  */
 export default function MechanicJob() {
   const id = Number(useLocalSearchParams<{ id: string }>().id);
@@ -54,6 +56,8 @@ export default function MechanicJob() {
       </Screen>
     );
   }
+  // A booking waits for its day (the car is dropped off or collected); SOS and diagnostics go straight to the car.
+  if (job.status === 'accepted' && job.scheduledDate) return <AcceptedBooking job={job} refetch={() => q.refetch()} />;
   if (job.status === 'accepted') return <EnRoute job={job} refetch={() => q.refetch()} />;
   if (job.status === 'pending') return <OpenJob job={job} />;
   if (job.status === 'completed' || job.status === 'cancelled') return <Summary job={job} />;
@@ -172,6 +176,159 @@ function EnRoute({ job, refetch }: { job: Job; refetch: () => void }) {
   );
 }
 
+/** When a booking is: "Today", "Tomorrow" or the date. */
+function bookedFor(date: string) {
+  const d = bookingDay(date);
+  return d === 'today' ? 'Today' : d === 'tomorrow' ? 'Tomorrow' : formatDate(date, { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/**
+ * An accepted booking. It stays quiet until its day (reminders the evening before and that morning): the date, the
+ * car, how the owner hands it over (drop-off at the garage, or a pickup address with directions), the steps it will
+ * start with, and the button that checks the car in when the mechanic has it.
+ */
+function AcceptedBooking({ job, refetch }: { job: Job; refetch: () => void }) {
+  const c = useColors();
+  const coords = usePresence((s) => s.coords);
+  const [busy, setBusy] = useState(false);
+  const o = job.owner;
+  const who = o?.fullName?.split(' ')[0] ?? 'The owner';
+  const h = job.handover;
+  const day = bookingDay(job.scheduledDate!);
+  // A pickup on its day: show the way there (the owner can follow the mechanic from now on).
+  const pickupPoint = h?.mode === 'pickup' && h.pickupLat != null && h.pickupLng != null ? { lat: h.pickupLat, lng: h.pickupLng } : null;
+  const showMap = !!pickupPoint && (day === 'today' || day === 'past');
+  const points = [
+    pickupPoint ? ({ ...pickupPoint, label: 'Pickup', kind: 'owner' } as MapPoint) : null,
+    coords ? ({ ...coords, label: 'You', kind: 'me' } as MapPoint) : null,
+  ].filter(Boolean) as MapPoint[];
+
+  // Checks the car in: it's at the garage, or the mechanic has collected it. Before the booked day, confirm first.
+  const start = async () => {
+    if (day === 'later' || day === 'tomorrow') {
+      const ok = await confirm('Start before the booked day?', `This booking is for ${bookedFor(job.scheduledDate!).toLowerCase()}. Start it now only if you already have the car.`, 'Start now');
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      const updated = await api.markArrived(job.id);
+      haptic('success');
+      invalidate(job.id, updated);
+      refetch();
+    } catch (e) {
+      toast({ title: 'Could not start', body: errorMessage(e), tone: 'danger' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Screen
+      back
+      title={job.serviceType}
+      eyebrow={`Job #${job.id} · Booking`}
+      footer={
+        <Button
+          title={h?.mode === 'pickup' ? 'I have collected the car · start' : 'Car is at my garage · start'}
+          icon={CircleCheck}
+          onPress={start}
+          loading={busy}
+          kind={day === 'today' || day === 'past' ? 'primary' : 'secondary'}
+          haptic
+        />
+      }>
+      <Card tone="dark" style={{ gap: 4 }}>
+        <Row gap={Space.sm}>
+          <CalendarClock size={20} color={c.primary} />
+          <Text variant="label" style={{ color: '#cbd5e1' }}>
+            Booked for
+          </Text>
+        </Row>
+        <Text variant="title" style={{ color: '#fff' }}>
+          {bookedFor(job.scheduledDate!)}
+        </Text>
+        {day === 'later' || day === 'tomorrow' ? (
+          <Text style={{ color: '#cbd5e1' }}>We’ll remind you the evening before and that morning.</Text>
+        ) : null}
+      </Card>
+
+      <Card style={{ gap: 4 }}>
+        <Text variant="heading">{o?.fullName}</Text>
+        <Text tone="textMuted">{job.vehicle ? `${vehicleLabel(job.vehicle)} ${job.vehicle.year} · ${job.vehicle.plateNumber}` : ''}</Text>
+        {job.notes ? <Text variant="caption">“{job.notes}”</Text> : null}
+      </Card>
+
+      {!h ? (
+        <InlineNotice tone="warning" icon={Clock}>
+          Waiting for {who} to choose: bring the car to your garage, or have you collect it.
+        </InlineNotice>
+      ) : h.mode === 'drop_off' ? (
+        <InlineNotice tone="info" icon={House}>
+          {who} will bring the car to your garage.
+        </InlineNotice>
+      ) : (
+        <Card style={{ gap: Space.sm }}>
+          <Row gap={Space.sm}>
+            <Truck size={18} color={c.primary} />
+            <Text variant="bodyStrong">Collect the car from</Text>
+          </Row>
+          <Text>{h.pickupAddress}</Text>
+          <Button
+            title="Directions"
+            icon={Navigation}
+            kind="info"
+            size="md"
+            onPress={() => (h.pickupLat != null && h.pickupLng != null ? openNavigation(h.pickupLat, h.pickupLng) : openMapsSearch(h.pickupAddress ?? ''))}
+          />
+        </Card>
+      )}
+      {showMap && points.length ? <MapCard points={points} height={220} /> : null}
+
+      <Button title={`Call ${who}`} icon={Phone} kind="secondary" size="md" onPress={() => callPhone(o?.phone)} disabled={!o?.phone} />
+
+      <Section title={`Steps · ${(job.checklist ?? []).length}`}>
+        <Card style={{ paddingVertical: Space.xs }}>
+          {(job.checklist ?? []).map((t) => (
+            <ChecklistRow key={t.id} item={t} />
+          ))}
+        </Card>
+        <AddStep jobId={job.id} />
+      </Section>
+    </Screen>
+  );
+}
+
+/** "Add a step" for steps this job needs beyond its service's usual ones. */
+function AddStep({ jobId }: { jobId: number }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const add = async () => {
+    setBusy(true);
+    try {
+      await api.addTask(jobId, text);
+      haptic('light');
+      setText('');
+      setOpen(false);
+      invalidate(jobId);
+    } catch (e) {
+      toast({ title: 'Could not add the step', body: errorMessage(e), tone: 'danger' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) return <Button title="Add a step" icon={ListPlus} kind="ghost" size="md" onPress={() => setOpen(true)} />;
+  return (
+    <Card style={{ gap: Space.sm }}>
+      <TextField label="New step" value={text} onChangeText={setText} placeholder="e.g. Replace the fan belt" maxLength={JOB_STEP_MAX} autoFocus returnKeyType="done" onSubmitEditing={add} />
+      <Row gap={Space.sm}>
+        <Button title="Cancel" kind="ghost" size="md" style={{ flex: 1 }} onPress={() => setOpen(false)} />
+        <Button title="Add step" size="md" style={{ flex: 1 }} onPress={add} loading={busy} disabled={text.trim().length < 3} />
+      </Row>
+    </Card>
+  );
+}
+
 /** M4 Digital job card — tap tasks, photo proof, lock rules, quotes. */
 function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; refetch: () => void }) {
   const c = useColors();
@@ -197,20 +354,25 @@ function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; 
     }
   };
 
-  // Adds photo proof for a task (camera or gallery), and marks the task done with it.
+  // Adds proof for a step (a photo, a short video, or one from the gallery), and marks the step done with it.
   const photo = async (t: ChecklistItem) => {
     try {
-      const source = await choosePhotoSource(`Photo proof · ${t.taskDescription}`);
+      const source = await chooseProofSource(`Proof · ${t.taskDescription}`, VIDEO_MAX_SECONDS);
       if (!source) return;
-      // The task is remembered so a camera photo still reaches it if Android closes the app meanwhile.
-      const [p] = await pickPhotos(source, 1, { kind: 'task', jobId: job.id, taskId: t.id, task: t.taskDescription });
-      if (!p) return;
+      // The step is remembered so a camera photo or video still reaches it if Android closes the app meanwhile.
+      const proof = await pickProof(source, { kind: 'task', jobId: job.id, taskId: t.id, task: t.taskDescription });
+      if (!proof) return;
       setBusyTask(t.id);
-      await api.updateTask(t.id, { isCompleted: true, photo: p });
+      const video = proof.type.startsWith('video/');
+      if (video) toast({ title: 'Sending the video…', body: 'This can take a minute on mobile data. Keep the app open.', tone: 'info' });
+      await api.updateTask(t.id, { isCompleted: true, photo: proof });
       haptic('success');
+      if (video) toast({ title: 'Video sent', body: t.taskDescription, tone: 'success' });
       invalidate(job.id);
     } catch (e) {
-      toast({ title: e instanceof PermissionDeniedError ? 'Camera permission needed' : 'Could not save photo', body: errorMessage(e), tone: 'danger' });
+      const title =
+        e instanceof PermissionDeniedError ? 'Camera permission needed' : e instanceof VideoTooLargeError ? 'Video too long' : 'Could not save the proof';
+      toast({ title, body: errorMessage(e), tone: 'danger' });
     } finally {
       setBusyTask(null);
     }
@@ -267,10 +429,11 @@ function JobCard({ job, refreshing, refetch }: { job: Job; refreshing: boolean; 
       <Section title="Checklist" style={{ marginTop: Space.sm }}>
         <Card style={{ paddingVertical: Space.xs }}>
           {(job.checklist ?? []).map((t) => (
-            <ChecklistRow key={t.id} item={t} onToggle={() => toggle(t)} onPhoto={() => photo(t)} disabled={busyTask === t.id} />
+            <ChecklistRow key={t.id} item={t} onToggle={() => toggle(t)} onPhoto={() => photo(t)} disabled={busyTask === t.id} busy={busyTask === t.id} />
           ))}
         </Card>
-        <Text variant="caption">Tap a task to tick it. Use the camera for photo proof.</Text>
+        <Text variant="caption">Tap a step to tick it. Tap the camera for a photo or a short video as proof.</Text>
+        <AddStep jobId={job.id} />
       </Section>
 
       <Section title="Parts">

@@ -1,10 +1,13 @@
-// Photo handling: asks for camera/library permission, lets the user take or pick photos, shrinks them for
-// upload, keeps them safe until they are sent, and (in local mode) copies them somewhere permanent.
+// Photo and video handling: asks for camera/library permission, lets the user take or pick photos (and, for job-step
+// proof, record or pick a short video), shrinks photos for upload, keeps files safe until they are sent, and (in local
+// mode) copies them somewhere permanent.
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
+import { VIDEO_MAX_MB, VIDEO_MAX_SECONDS } from '@/constants/config';
 import type { LocalPhoto } from '@/models';
 
 import { Keys, kv } from './storage';
@@ -130,8 +133,58 @@ export async function pickPhotos(source: PhotoSource, limit: number, purpose?: C
   return uris.map(keepForUpload).map(toLocalPhoto);
 }
 
+/** A picked or recorded video as an upload-ready file (keeps the container's extension for the server). */
+function toLocalVideo(asset: ImagePicker.ImagePickerAsset): LocalPhoto {
+  const mime = asset.mimeType?.startsWith('video/') ? asset.mimeType : 'video/mp4';
+  const ext = mime.includes('quicktime') ? 'mov' : mime.includes('3gpp') ? '3gp' : mime.includes('webm') ? 'webm' : 'mp4';
+  return { uri: keepForUpload(asset.uri), name: `video-${Date.now()}.${ext}`, type: mime };
+}
+
+/** Thrown when a video is too long or too large to send; its message can be shown as-is. */
+export class VideoTooLargeError extends Error {}
+
+/** Refuses videos over the length or size limits (the server enforces the size too). */
+function checkVideo(asset: ImagePicker.ImagePickerAsset) {
+  // expo-image-picker reports the duration in milliseconds.
+  if (asset.duration != null && asset.duration > (VIDEO_MAX_SECONDS + 1) * 1000) {
+    throw new VideoTooLargeError(`Videos can be at most ${VIDEO_MAX_SECONDS} seconds. Record a shorter clip.`);
+  }
+  if (asset.fileSize != null && asset.fileSize > VIDEO_MAX_MB * 1024 * 1024) {
+    throw new VideoTooLargeError(`That video is over ${VIDEO_MAX_MB} MB. Record a shorter clip.`);
+  }
+}
+
 /**
- * Android only: the photo taken while Android closed the app (or its screen), with what it was for. Call on start
+ * Proof for a job step: a new photo, a new video (at most VIDEO_MAX_SECONDS), or one photo/video from the gallery.
+ * Returns null if the user cancels. `purpose` lets a camera result survive Android closing the app meanwhile.
+ */
+export async function pickProof(source: 'photo' | 'video' | 'library', purpose?: CameraPurpose): Promise<LocalPhoto | null> {
+  if (source === 'photo') return (await pickPhotos('camera', 1, purpose))[0] ?? null;
+  if (source === 'video') {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) throw new PermissionDeniedError('Camera access is needed to record videos.');
+    if (purpose && Platform.OS === 'android') await kv.set(CAMERA_PURPOSE_KEY, { ...purpose, at: Date.now() });
+    // The phone's own camera app records; it stops at the time limit on its own.
+    const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['videos'], videoMaxDuration: VIDEO_MAX_SECONDS, videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium });
+    if (purpose) await kv.remove(CAMERA_PURPOSE_KEY);
+    if (res.canceled || !res.assets[0]) return null;
+    checkVideo(res.assets[0]);
+    return toLocalVideo(res.assets[0]);
+  }
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) throw new PermissionDeniedError('Photo library access is needed to attach photos or videos.');
+  const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], quality: 0.7, allowsMultipleSelection: false });
+  const asset = res.canceled ? undefined : res.assets[0];
+  if (!asset) return null;
+  if (asset.type === 'video' || asset.mimeType?.startsWith('video/')) {
+    checkVideo(asset);
+    return toLocalVideo(asset);
+  }
+  return toLocalPhoto(keepForUpload(await compress(asset.uri, asset.width)), 0);
+}
+
+/**
+ * Android only: the photo (or job-step video) taken while Android closed the app (or its screen), with what it was for. Call on start
  * and whenever the app returns to the foreground. Returns null when there is nothing to recover.
  */
 export async function recoverCameraPhoto(): Promise<{ purpose: CameraPurpose; photo: LocalPhoto } | null> {
@@ -148,6 +201,15 @@ export async function recoverCameraPhoto(): Promise<{ purpose: CameraPurpose; ph
   if (!saved || Date.now() - saved.at > CAMERA_PURPOSE_MAX_AGE_MS) return null;
   const { at: _at, ...purpose } = saved;
   const asset = res.assets[0]!;
+  // A recorded video (job-step proof) is sent as it is; photos are shrunk first.
+  if (asset.type === 'video' || asset.mimeType?.startsWith('video/')) {
+    try {
+      checkVideo(asset);
+    } catch {
+      return null;
+    }
+    return { purpose: purpose as CameraPurpose, photo: toLocalVideo(asset) };
+  }
   const uri = await compress(asset.uri, asset.width);
   return { purpose: purpose as CameraPurpose, photo: toLocalPhoto(keepForUpload(uri), 0) };
 }
@@ -169,4 +231,16 @@ export function persistPhoto(photo: LocalPhoto): string {
     // Copy failed: fall back to the original path, which still works until the cache is cleared.
     return photo.uri;
   }
+}
+
+/**
+ * Opens an uploaded photo or video full screen: in the phone's in-app browser, which plays MP4 videos with its own
+ * player (the app has no video player of its own), or a new tab on web.
+ */
+export async function openMedia(url: string) {
+  if (Platform.OS === 'web') {
+    globalThis.open?.(url, '_blank', 'noopener');
+    return;
+  }
+  await WebBrowser.openBrowserAsync(url);
 }

@@ -45,6 +45,7 @@ process.env.FCM_SERVICE_ACCOUNT = JSON.stringify({
   token_uri: `${googleBase}/token`,
 });
 
+const { DEFAULT_JOB_STEPS } = await import('@/constants/config');
 const { createServer } = await import('node:http');
 const { createApp } = await import('../src/app');
 const { migrate, pool } = await import('../src/db');
@@ -263,7 +264,7 @@ describe('jobs', () => {
 
     const arrived = await call('POST', `/mechanic/jobs/${jobId}/arrived`, { token: winner.accessToken });
     assert.equal(arrived.json.status, 'fixing');
-    assert.equal(arrived.json.checklist.length, 4);
+    assert.equal(arrived.json.checklist.length, DEFAULT_JOB_STEPS['Flat Tire']!.length, 'a flat tyre gets the flat-tyre steps');
     assert.equal((await call('POST', `/mechanic/jobs/${jobId}/complete`, { token: winner.accessToken })).status, 422);
 
     for (const t of arrived.json.checklist) {
@@ -317,7 +318,11 @@ describe('jobs', () => {
     assert.equal((await call('POST', '/jobs/bookings', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, serviceType: 'Oil Change', scheduledDate: '2020-01-01' } })).status, 400);
     const bk = await call('POST', '/jobs/bookings', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, serviceType: 'Oil Change', scheduledDate: '2999-01-01', notes: 'Squeak' } });
     assert.equal(bk.status, 201);
-    assert.equal(bk.json.checklist.length, 10);
+    assert.deepEqual(
+      bk.json.checklist.map((t: Json) => t.taskDescription),
+      [...DEFAULT_JOB_STEPS['Oil Change']!],
+      'an oil change starts with oil-change steps',
+    );
     assert.equal(bk.json.scheduledDate, '2999-01-01');
     assert.ok((await call('GET', '/mechanic/jobs?tab=bookings', { token: m.accessToken })).json.some((j: Json) => j.id === bk.json.id));
     assert.equal((await call('POST', `/mechanic/jobs/${bk.json.id}/decline`, { token: m.accessToken })).status, 204);
@@ -596,5 +601,263 @@ describe('shop (marketplace)', () => {
     assert.equal((await call('GET', `/shop/products/${oil}`, { token: owner.accessToken })).status, 404);
     const hidden = await call('POST', '/shop/orders', { token: owner.accessToken, body: { items: [{ productId: oil, quantity: 1 }], fulfilment: 'pickup', paymentMethod: 'cash', contactPhone: '0772000002' } });
     assert.equal(hidden.json.error.code, 'PRODUCT_UNAVAILABLE');
+  });
+});
+
+describe('job steps, video proof and booking handover', () => {
+  const staff = { Authorization: `Basic ${Buffer.from('staff:admin-test').toString('base64')}`, 'Sec-Fetch-Site': 'same-origin' };
+  // Smallest thing that passes as an MP4: an "ftyp" box, then filler.
+  const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(12), Buffer.alloc(5000, 7)]);
+
+  test('each service starts with its own steps; admins can change them; mechanics add steps', async () => {
+    const owner = await ownerWithCar('steps-owner@x.ug');
+    const bookStep = async (serviceType: string) =>
+      (await call('POST', '/jobs/bookings', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, serviceType, scheduledDate: '2999-02-01' } })).json;
+    const general = await bookStep('General Service');
+    assert.deepEqual(general.checklist.map((t: Json) => t.taskDescription), [...DEFAULT_JOB_STEPS['General Service']!]);
+
+    // Staff change the brake steps in Settings (one per line); other services keep their defaults.
+    const saved = await fetch(`${base}/admin/settings/steps`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { ...staff, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams([
+        ['service', 'Brake Repair'],
+        ['steps', 'Inspect pads\r\n\r\n  Replace   pads  \nRoad test'],
+        ['service', 'Oil Change'],
+        ['steps', ''],
+      ]),
+    });
+    assert.equal(saved.status, 303);
+    assert.deepEqual((await bookStep('Brake Repair')).checklist.map((t: Json) => t.taskDescription), ['Inspect pads', 'Replace pads', 'Road test']);
+    assert.deepEqual((await bookStep('Oil Change')).checklist.map((t: Json) => t.taskDescription), [...DEFAULT_JOB_STEPS['Oil Change']!]);
+    assert.ok((await (await fetch(`${base}/admin/settings`, { headers: staff })).text()).includes('Job steps'));
+
+    // An SOS gets the steps for its issue when the mechanic arrives; the mechanic can add one more.
+    const m = await mechanic('steps-mech@x.ug', 0.3137, 32.5812);
+    const other = await mechanic('steps-other@x.ug', 0.3137, 32.5812);
+    const sos = await call('POST', '/sos', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, issue: 'Flat Tire', ...KAMPALA } });
+    await call('POST', `/mechanic/jobs/${sos.json.jobId}/accept`, { token: m.accessToken });
+    const arrived = await call('POST', `/mechanic/jobs/${sos.json.jobId}/arrived`, { token: m.accessToken });
+    assert.deepEqual(arrived.json.checklist.map((t: Json) => t.taskDescription), [...DEFAULT_JOB_STEPS['Flat Tire']!]);
+    const added = await call('POST', `/mechanic/jobs/${sos.json.jobId}/tasks`, { token: m.accessToken, body: { description: 'Replace valve stem' } });
+    assert.equal(added.status, 201);
+    assert.equal(added.json.taskDescription, 'Replace valve stem');
+    assert.equal((await call('POST', `/mechanic/jobs/${sos.json.jobId}/tasks`, { token: other.accessToken, body: { description: 'Sneaky step' } })).status, 403);
+    assert.equal((await call('POST', `/mechanic/jobs/${sos.json.jobId}/tasks`, { token: m.accessToken, body: { description: 'x' } })).status, 400);
+    const seen = await call('GET', `/jobs/${sos.json.jobId}`, { token: owner.accessToken });
+    assert.equal(seen.json.checklist.at(-1).taskDescription, 'Replace valve stem');
+  });
+
+  test('a step can be proven with a video, which plays back in ranges', async () => {
+    const owner = await ownerWithCar('video-owner@x.ug');
+    const m = await mechanic('video-mech@x.ug', 0.3137, 32.5812);
+    const sos = await call('POST', '/sos', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, issue: 'Dead Battery', ...KAMPALA } });
+    await call('POST', `/mechanic/jobs/${sos.json.jobId}/accept`, { token: m.accessToken });
+    const job = (await call('POST', `/mechanic/jobs/${sos.json.jobId}/arrived`, { token: m.accessToken })).json;
+    const [first, second] = job.checklist;
+
+    const vf = new FormData();
+    vf.append('isCompleted', 'true');
+    vf.append('video', new Blob([MP4], { type: 'video/mp4' }), 'proof.mp4');
+    const withVideo = await call('PATCH', `/mechanic/tasks/${first.id}`, { token: m.accessToken, form: vf });
+    assert.equal(withVideo.status, 200, JSON.stringify(withVideo.json));
+    assert.equal(withVideo.json.proofKind, 'video');
+    assert.match(withVideo.json.photoUrl, /\/media\/[a-f0-9]{32}\.mp4$/);
+
+    const whole = await fetch(withVideo.json.photoUrl);
+    assert.equal(whole.status, 200);
+    assert.equal(whole.headers.get('accept-ranges'), 'bytes');
+    assert.equal((await whole.arrayBuffer()).byteLength, MP4.length);
+    const head = await fetch(withVideo.json.photoUrl, { headers: { Range: 'bytes=0-99' } });
+    assert.equal(head.status, 206);
+    assert.equal(head.headers.get('content-range'), `bytes 0-99/${MP4.length}`);
+    assert.deepEqual(Buffer.from(await head.arrayBuffer()), MP4.subarray(0, 100));
+    const tail = await fetch(withVideo.json.photoUrl, { headers: { Range: 'bytes=-10' } });
+    assert.deepEqual(Buffer.from(await tail.arrayBuffer()), MP4.subarray(MP4.length - 10));
+    assert.equal((await fetch(withVideo.json.photoUrl, { headers: { Range: `bytes=${MP4.length}-` } })).status, 416);
+
+    // Photos still work the same way; anything else is refused.
+    const pf = new FormData();
+    pf.append('isCompleted', 'true');
+    pf.append('photo', new Blob([PNG], { type: 'image/png' }), 'p.png');
+    assert.equal((await call('PATCH', `/mechanic/tasks/${second.id}`, { token: m.accessToken, form: pf })).json.proofKind, 'photo');
+    const bad = new FormData();
+    bad.append('isCompleted', 'true');
+    bad.append('video', new Blob([Buffer.from('not a video at all')], { type: 'video/mp4' }), 'x.mp4');
+    assert.equal((await call('PATCH', `/mechanic/tasks/${second.id}`, { token: m.accessToken, form: bad })).status, 400);
+    // The owner sees the video on their tracker, and the admin job page links it.
+    assert.equal((await call('GET', `/jobs/${sos.json.jobId}`, { token: owner.accessToken })).json.checklist[0].proofKind, 'video');
+    assert.ok((await (await fetch(`${base}/admin/jobs/${sos.json.jobId}`, { headers: staff })).text()).includes('Video'));
+  });
+
+  test('bookings: the owner chooses drop-off or pickup; upcoming bookings stay quiet', async () => {
+    const owner = await ownerWithCar('handover-owner@x.ug');
+    const m = await mechanic('handover-mech@x.ug', 0.3137, 32.5812);
+    const outsider = await mechanic('handover-other@x.ug', 0.3137, 32.5812);
+    const bk = (await call('POST', '/jobs/bookings', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, serviceType: 'General Service', scheduledDate: '2999-03-01' } })).json;
+    const ownerLive = await listen(owner.accessToken);
+    const mechLive = await listen(m.accessToken);
+    const accepted = await call('POST', `/mechanic/jobs/${bk.id}/accept`, { token: m.accessToken });
+    assert.equal(accepted.json.handover, null);
+    await eventually(() => ownerLive.events.some((e) => e.event === 'appointment_update' && /Tell them how the car gets there/.test(e.payload.summary)), 'acceptance asks for the handover');
+
+    const mine = (await call('GET', `/jobs/${bk.id}`, { token: owner.accessToken })).json;
+    assert.equal(mine.mechanic.garageLocation, 'Kampala');
+    // The mechanic shares their position (they're online for SOS), but an upcoming booking doesn't track them.
+    await call('POST', '/me/location', { token: m.accessToken, body: { lat: 0.32, lng: 32.59 } });
+    assert.equal((await call('GET', `/jobs/${bk.id}`, { token: owner.accessToken })).json.mechanic.locationLat, null);
+    await wait(100);
+    assert.ok(!ownerLive.events.some((e) => e.event === 'mechanic_location'), 'no live location for an upcoming booking');
+
+    const noAddress = await call('POST', `/jobs/${bk.id}/handover`, { token: owner.accessToken, body: { mode: 'pickup' } });
+    assert.equal(noAddress.status, 400);
+    const pickup = await call('POST', `/jobs/${bk.id}/handover`, { token: owner.accessToken, body: { mode: 'pickup', pickupAddress: 'Ntinda, Kiwatule Rd, blue gate', lat: 0.35, lng: 32.61 } });
+    assert.equal(pickup.status, 200, JSON.stringify(pickup.json));
+    assert.deepEqual(pickup.json.handover, { mode: 'pickup', pickupAddress: 'Ntinda, Kiwatule Rd, blue gate', pickupLat: 0.35, pickupLng: 32.61 });
+    await eventually(() => mechLive.events.some((e) => e.event === 'appointment_update' && /Collect the car from Ntinda/.test(e.payload.summary)), 'the mechanic hears where to collect');
+    assert.equal((await call('GET', `/jobs/${bk.id}`, { token: m.accessToken })).json.handover.pickupAddress, 'Ntinda, Kiwatule Rd, blue gate');
+    assert.equal((await call('GET', `/jobs/${bk.id}`, { token: outsider.accessToken })).status, 409, 'other mechanics see nothing of it');
+    const dropOff = await call('POST', `/jobs/${bk.id}/handover`, { token: owner.accessToken, body: { mode: 'drop_off', pickupAddress: 'ignored' } });
+    assert.deepEqual(dropOff.json.handover, { mode: 'drop_off', pickupAddress: null, pickupLat: null, pickupLng: null });
+
+    // Checked in at the garage: the owner is told so, and the handover can no longer change.
+    await call('POST', `/mechanic/jobs/${bk.id}/arrived`, { token: m.accessToken });
+    await eventually(() => ownerLive.events.some((e) => e.event === 'job_progress_update' && /checked in at Garage/.test(e.payload.summary)), 'check-in message');
+    assert.equal((await call('POST', `/jobs/${bk.id}/handover`, { token: owner.accessToken, body: { mode: 'drop_off' } })).status, 422);
+    const sos = await call('POST', '/sos', { token: owner.accessToken, body: { vehicleId: owner.vehicleId, issue: 'Towing', ...KAMPALA } });
+    assert.equal((await call('POST', `/jobs/${sos.json.jobId}/handover`, { token: owner.accessToken, body: { mode: 'drop_off' } })).json.error.code, 'NOT_A_BOOKING');
+  });
+});
+
+describe('marketplace sellers', () => {
+  const staff = { Authorization: `Basic ${Buffer.from('staff:admin-test').toString('base64')}`, 'Sec-Fetch-Site': 'same-origin' };
+  /** A request to the seller portal as the browser makes it (same-origin form posts, the session cookie). */
+  async function portal(method: string, path: string, opts: { cookie?: string; fields?: Record<string, string>; form?: FormData; site?: string } = {}) {
+    const headers: Record<string, string> = { 'Sec-Fetch-Site': opts.site ?? 'same-origin' };
+    if (opts.cookie) headers.Cookie = opts.cookie;
+    let body: BodyInit | undefined;
+    if (opts.form) body = opts.form;
+    else if (opts.fields) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      body = new URLSearchParams(opts.fields);
+    }
+    const res = await fetch(`${base}/seller${path}`, { method, headers, body, redirect: 'manual' });
+    return { status: res.status, location: res.headers.get('location') ?? '', cookie: (res.headers.get('set-cookie') ?? '').split(';')[0]!, text: await res.text() };
+  }
+  const staffPost = (path: string, fields: Record<string, string> = {}) =>
+    fetch(`${base}/admin${path}`, { method: 'POST', redirect: 'manual', headers: { ...staff, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ back: '/admin', ...fields }) });
+  const signup = { shop_name: 'Kisekka Genuine Spares', contact_name: 'Moses Kato', phone: '0772 445566', email: 'moses@kisekka.ug', password: 'spares123', location: 'Kisekka Market, Kampala', about: 'Toyota parts', payout_number: '0772445566' };
+  const productFields = (extra: Record<string, string> = {}) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries({ name: 'Alternator (Toyota 1NZ)', category: 'parts', brand: 'Denso', part_number: '27060-21040', price: '50000', stock: '4', warranty_months: '3', compatible_with: 'Toyota', description: 'Genuine Denso alternator', ...extra })) form.append(k, v);
+    return form;
+  };
+
+  test('sign up, list, get checked, sell, get collected, get paid; suspension hides everything', async () => {
+    assert.equal((await portal('POST', '/signup', { fields: { ...signup, phone: '12' } })).status, 400);
+    assert.equal((await portal('POST', '/signup', { fields: signup, site: 'cross-site' })).status, 403);
+    const joined = await portal('POST', '/signup', { fields: signup });
+    assert.equal(joined.status, 303);
+    assert.match(joined.cookie, /^mcr_seller=/);
+    const cookie = joined.cookie;
+    assert.equal((await portal('POST', '/signup', { fields: signup })).status, 409, 'one shop per email');
+    assert.ok((await portal('GET', '/', { cookie })).text.includes('under review'));
+    assert.equal((await portal('GET', '/')).location, '/seller/login', 'signed-out visitors go to sign in');
+    assert.equal((await portal('GET', '/', { cookie: `${cookie.slice(0, -3)}abc` })).location, '/seller/login', 'a tampered cookie is refused');
+    assert.equal((await portal('POST', '/login', { fields: { email: signup.email, password: 'wrong' } })).status, 401);
+    assert.equal((await portal('POST', '/login', { fields: { email: signup.email, password: signup.password } })).status, 303);
+
+    // A listing needs a photo, then waits for review; nothing shows while the shop itself is unapproved.
+    assert.equal((await portal('POST', '/products', { cookie, form: productFields() })).status, 400);
+    const withPhoto = productFields();
+    withPhoto.append('photos', new Blob([PNG], { type: 'image/png' }), 'alt.png');
+    const created = await portal('POST', '/products', { cookie, form: withPhoto });
+    assert.equal(created.status, 303);
+    const productId = Number(created.location.match(/products\/(\d+)/)![1]);
+    const sellerId = (await pool.query(`SELECT id FROM sellers WHERE email = $1`, [signup.email])).rows[0].id;
+    const owner = await ownerWithCar('seller-buyer@x.ug');
+    const listed = async () => (await call('GET', '/shop/products', { token: owner.accessToken })).json.find((x: Json) => x.id === productId);
+    assert.equal(await listed(), undefined, 'waiting for review');
+    assert.ok((await (await fetch(`${base}/admin/shop/products?status=review`, { headers: staff })).text()).includes('Alternator (Toyota 1NZ)'));
+    await staffPost(`/shop/products/${productId}/review`, { decision: 'approve' });
+    assert.equal(await listed(), undefined, "the seller's shop isn't approved yet");
+    await staffPost(`/shop/sellers/${sellerId}/approve`);
+    const live = await listed();
+    assert.deepEqual(live.seller, { id: sellerId, shopName: 'Kisekka Genuine Spares', location: 'Kisekka Market, Kampala' });
+
+    // Price changes apply at once; changing what the item is sends it back for review.
+    const edit = (extra: Record<string, string>) => {
+      const f = productFields(extra);
+      f.append('keep', (live.photos[0] as string).replace(/^.*\/(media\/)/, '$1'));
+      return portal('POST', `/products/${productId}`, { cookie, form: f });
+    };
+    assert.match((await edit({ price: '55000' })).location, /seller-product-saved/);
+    assert.equal((await listed()).price, 55000);
+    assert.match((await edit({ price: '55000', name: 'Alternator 1NZ (rebuilt?)' })).location, /seller-product-review/);
+    assert.equal(await listed(), undefined);
+    await staffPost(`/shop/products/${productId}/review`, { decision: 'reject', note: 'Say whether it is new or rebuilt' });
+    assert.ok((await portal('GET', '/products', { cookie })).text.includes('Say whether it is new or rebuilt'));
+    await edit({ price: '50000', name: 'Alternator (Toyota 1NZ), new' });
+    await staffPost(`/shop/products/${productId}/review`, { decision: 'approve' });
+    assert.equal((await listed()).name, 'Alternator (Toyota 1NZ), new');
+
+    // An owner buys 2: the lines remember the seller and the 10% commission.
+    const order = await call('POST', '/shop/orders', { token: owner.accessToken, body: { items: [{ productId, quantity: 2 }], fulfilment: 'delivery', deliveryAddress: 'Bukoto, Kisaasi Rd', paymentMethod: 'mobile_money', contactPhone: '0700111222' } });
+    assert.equal(order.status, 201, JSON.stringify(order.json));
+    const line = (await pool.query(`SELECT * FROM order_items WHERE order_id = $1`, [order.json.id])).rows[0];
+    assert.equal(line.seller_id, sellerId);
+    assert.equal(Number(line.commission_percent), 10);
+
+    // The seller sees it (never the buyer's details), gets it ready once it is confirmed, and staff collect it.
+    const waiting = await portal('GET', '/orders?status=waiting', { cookie });
+    assert.ok(waiting.text.includes(`Order #${order.json.id}`));
+    assert.ok(!waiting.text.includes('0700111222') && !waiting.text.includes('Kisaasi') && !waiting.text.includes('seller-buyer'), 'no buyer details for sellers');
+    await portal('POST', `/orders/${order.json.id}/ready`, { cookie });
+    assert.equal((await pool.query(`SELECT seller_status FROM order_items WHERE order_id = $1`, [order.json.id])).rows[0].seller_status, 'new', 'not before confirmation');
+    await staffPost(`/shop/orders/${order.json.id}/status`, { next: 'confirmed' });
+    assert.ok((await portal('GET', '/', { cookie })).text.includes('To get ready'));
+    await portal('POST', `/orders/${order.json.id}/ready`, { cookie });
+    assert.equal((await pool.query(`SELECT seller_status FROM order_items WHERE order_id = $1`, [order.json.id])).rows[0].seller_status, 'ready');
+    const adminOrder = await (await fetch(`${base}/admin/shop/orders/${order.json.id}`, { headers: staff })).text();
+    assert.ok(adminOrder.includes('Collect from sellers') && adminOrder.includes('Ready at seller'));
+    await staffPost(`/shop/orders/${order.json.id}/collected`, { seller: String(sellerId) });
+    await staffPost(`/shop/orders/${order.json.id}/status`, { next: 'out_for_delivery' });
+    await staffPost(`/shop/orders/${order.json.id}/status`, { next: 'delivered' });
+
+    // Money: 2 × 50,000 minus 10% = 90,000 owed, then paid once (the amount is worked out by the server).
+    assert.ok((await portal('GET', '/earnings', { cookie })).text.includes('UGX 90,000'));
+    assert.ok((await (await fetch(`${base}/admin/shop/sellers/${sellerId}`, { headers: staff })).text()).includes('Record payout of UGX 90,000'));
+    assert.match((await staffPost(`/shop/sellers/${sellerId}/payout`, { method: 'mobile_money', reference: 'MP240930.1234' })).headers.get('location') ?? '', /payout-recorded/);
+    assert.match((await staffPost(`/shop/sellers/${sellerId}/payout`, { method: 'mobile_money' })).headers.get('location') ?? '', /payout-none/);
+    const payout = (await pool.query(`SELECT * FROM seller_payouts WHERE seller_id = $1`, [sellerId])).rows;
+    assert.equal(payout.length, 1);
+    assert.equal(Number(payout[0].amount), 90000);
+    const earnings = (await portal('GET', '/earnings', { cookie })).text;
+    assert.ok(earnings.includes('MP240930.1234') && earnings.includes('Paid'));
+    assert.ok((await (await fetch(`${base}/admin/shop/sellers`, { headers: staff })).text()).includes('Kisekka Genuine Spares'));
+
+    // Suspended: products leave the Shop, the seller is signed out and can't sign back in.
+    await staffPost(`/shop/sellers/${sellerId}/suspend`);
+    assert.equal(await listed(), undefined);
+    assert.equal((await portal('GET', '/', { cookie })).location, '/seller/login');
+    assert.equal((await portal('POST', '/login', { fields: { email: signup.email, password: signup.password } })).status, 403);
+    const blocked = await call('POST', '/shop/orders', { token: owner.accessToken, body: { items: [{ productId, quantity: 1 }], fulfilment: 'pickup', paymentMethod: 'cash', contactPhone: '0700111222' } });
+    assert.equal(blocked.json.error.code, 'PRODUCT_UNAVAILABLE');
+  });
+
+  test("sellers only ever touch their own products", async () => {
+    const a = await portal('POST', '/signup', { fields: { ...signup, email: 'a@shop.ug', shop_name: 'Shop A' } });
+    const b = await portal('POST', '/signup', { fields: { ...signup, email: 'b@shop.ug', shop_name: 'Shop B' } });
+    const f = productFields({ name: 'Shop A wiper' });
+    f.append('photos', new Blob([PNG], { type: 'image/png' }), 'w.png');
+    const id = Number((await portal('POST', '/products', { cookie: a.cookie, form: f })).location.match(/products\/(\d+)/)![1]);
+    assert.equal((await portal('GET', `/products/${id}`, { cookie: b.cookie })).status, 404);
+    const steal = productFields({ name: 'Hijacked' });
+    await portal('POST', `/products/${id}`, { cookie: b.cookie, form: steal });
+    await portal('POST', `/products/${id}/visibility`, { cookie: b.cookie });
+    const row = (await pool.query(`SELECT name, is_active FROM products WHERE id = $1`, [id])).rows[0];
+    assert.deepEqual(row, { name: 'Shop A wiper', is_active: true });
+    assert.equal((await portal('POST', '/products', { cookie: a.cookie, form: productFields(), site: 'cross-site' })).status, 403);
   });
 });

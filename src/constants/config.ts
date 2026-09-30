@@ -40,6 +40,38 @@ export const BOOKING_CHECKLIST = [
 /** Tasks a mechanic works through on arriving at an SOS job. */
 export const ARRIVAL_CHECKLIST = ['Initial Inspection', 'Fluid Level Check', 'Diagnostic Scan', 'Safety Test'] as const;
 
+/** Key in the job-steps table for every "Diagnostic: …" job, whatever the symptoms. */
+export const DIAGNOSTICS_STEPS_KEY = 'Diagnostics';
+
+/**
+ * Default steps on the mechanic's job card for each kind of job: every SOS issue, every bookable service and
+ * diagnostics. Staff can change them in /admin → Settings; a job whose service isn't listed gets
+ * ARRIVAL_CHECKLIST. Mechanics can add extra steps to a single job from its job card.
+ */
+export const DEFAULT_JOB_STEPS: Record<string, readonly string[]> = {
+  'Flat Tire': ['Check tyre damage', 'Loosen nuts and jack up the car', 'Repair puncture or fit spare', 'Tighten nuts and lower the car', 'Check tyre pressure'],
+  'Dead Battery': ['Test battery voltage', 'Clean and tighten terminals', 'Jump-start or replace battery', 'Test charging (alternator)'],
+  'Engine Failure': ['Initial inspection', 'Check oil and coolant', 'Diagnostic scan', 'Fix the fault', 'Start and test the engine'],
+  Towing: ['Photograph the car’s condition', 'Secure the car for towing', 'Tow to the garage', 'Hand over at the garage'],
+  'Low Fuel': ['Deliver fuel', 'Refuel the car', 'Start the engine and check'],
+  'Car Crash': ['Check everyone is safe', 'Photograph the damage', 'Make the car safe (hazards, leaks, battery)', 'Assess the damage', 'Tow or repair on site'],
+  'Oil Change': ['Drain the old oil', 'Replace the oil filter', 'Refill with new oil', 'Check oil level and leaks', 'Reset the service reminder'],
+  'Brake Repair': ['Inspect pads and discs', 'Replace pads or shoes', 'Check brake fluid', 'Bleed brakes if needed', 'Road-test the brakes'],
+  'General Service': BOOKING_CHECKLIST,
+  'Tyre Rotation': ['Check tyre wear and pressure', 'Rotate the tyres', 'Torque the wheel nuts', 'Set tyre pressures'],
+  [DIAGNOSTICS_STEPS_KEY]: ['Hear the symptoms from the owner', 'Diagnostic scan', 'Inspect the affected system', 'Explain the findings and quote parts', 'Fix the fault', 'Test drive'],
+};
+
+/** Most steps one job card can have (defaults plus steps the mechanic adds). */
+export const MAX_JOB_STEPS = 30;
+/** Longest step description. */
+export const JOB_STEP_MAX = 120;
+
+/** Longest video a mechanic can record as proof for a step (short clips keep uploads quick on mobile data). */
+export const VIDEO_MAX_SECONDS = 20;
+/** Largest video upload, in MB (the server enforces the same limit). */
+export const VIDEO_MAX_MB = 40;
+
 /** Quick tags an owner can add to a mechanic review. */
 export const REVIEW_TAGS = ['On time', 'Fair price', 'Showed old part', 'Explained clearly', 'Clean work'] as const;
 
@@ -88,3 +120,6 @@ export const PRODUCT_CATEGORIES = [
 
 /** Most of one product a single order can hold (keeps stock fair and orders sane). */
 export const MAX_ORDER_QUANTITY = 20;
+
+/** MyCarRepair's default commission on marketplace sellers' sales, in percent (changeable in /admin → Settings). */
+export const DEFAULT_COMMISSION_PERCENT = 10;

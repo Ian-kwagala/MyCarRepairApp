@@ -5,15 +5,18 @@ import { readFileSync } from 'node:fs';
 import { Router, type Request, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 
+import { DEFAULT_JOB_STEPS, JOB_STEP_MAX, MAX_JOB_STEPS } from '@/constants/config';
 import { parseFeedback } from '@/utils/jobs';
 
 import { config } from '../config';
 import { one, query, tx } from '../db';
 import { fcmEnabled } from '../fcm';
-import { serviceFee } from '../jobs';
-import { shopSettings } from '../shop';
+import { jobStepsTable, serviceFee } from '../jobs';
+import { isVideoPath } from '../mappers';
+import { commissionPercent, reviewListings, shopSettings } from '../shop';
 import { sendPush } from '../push';
 import { emitTo } from '../realtime';
+import { privatePageHeaders, sameOrigin } from '../web';
 import { backTo, chrome, like, mediaSrc, PAGE_SIZE, pageNo, pick, SOS_LIST, SOS_SQL, str } from './common';
 import { adminShopRouter } from './shop';
 import type { ChecklistRow, JobRow, QuoteRow, ReviewRow, UserRow, VehicleRow } from '../types';
@@ -54,22 +57,6 @@ const sha = (s: string) => createHash('sha256').update(s).digest();
 // Failed sign-ins only: stops password guessing without getting in the way of normal use.
 adminRouter.use(rateLimit({ windowMs: 15 * 60_000, limit: 30, skipSuccessfulRequests: true, standardHeaders: 'draft-8', legacyHeaders: false }));
 
-/** True when a POST was made by a page of this site. */
-function sameOrigin(req: Request) {
-  // Sec-Fetch-Site is set by the browser itself and can't be forged by another site's page.
-  const site = req.get('sec-fetch-site');
-  if (site) return site === 'same-origin';
-  for (const value of [req.get('origin'), req.get('referer')]) {
-    if (!value || value === 'null') continue;
-    try {
-      return new URL(value).host === req.get('host');
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
-
 const auth: RequestHandler = (req, res, next) => {
   if (!config.adminPassword) {
     res.status(404).send('Admin page is disabled. Set ADMIN_PASSWORD to enable it.');
@@ -88,11 +75,7 @@ const auth: RequestHandler = (req, res, next) => {
     res.status(403).send('Cross-site request blocked.');
     return;
   }
-  // helmet's default "no-referrer" makes browsers send "Origin: null" on form posts, which would make every
-  // button here look cross-site. "same-origin" keeps the real origin on our own posts and nothing leaves the site.
-  res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('X-Robots-Tag', 'noindex');
+  privatePageHeaders(res);
   next();
 };
 adminRouter.use(auth);
@@ -296,7 +279,10 @@ adminRouter.get('/jobs/:id', async (req, res) => {
     one<UserRow>(`SELECT * FROM users WHERE id = $1`, [job.owner_id]),
     job.mechanic_id ? one<UserRow>(`SELECT * FROM users WHERE id = $1`, [job.mechanic_id]) : Promise.resolve(undefined),
     job.vehicle_id ? one<VehicleRow>(`SELECT * FROM vehicles WHERE id = $1`, [job.vehicle_id]) : Promise.resolve(undefined),
-    one<{ scheduled_date: string | null; notes: string | null; photo: string | null }>(`SELECT * FROM job_extras WHERE job_id = $1`, [id]),
+    one<{ scheduled_date: string | null; notes: string | null; photo: string | null; handover: string | null; pickup_address: string | null }>(
+      `SELECT * FROM job_extras WHERE job_id = $1`,
+      [id],
+    ),
     query<ChecklistRow>(`SELECT * FROM job_checklists WHERE job_id = $1 ORDER BY id`, [id]),
     query<QuoteRow>(`SELECT * FROM parts_quotes WHERE job_id = $1 ORDER BY created_at`, [id]),
     one<ReviewRow>(`SELECT * FROM reviews WHERE job_id = $1`, [id]),
@@ -315,7 +301,7 @@ adminRouter.get('/jobs/:id', async (req, res) => {
   const body = `<div class="grid2"><div>
 <section class="card"><div class="card-h"><h2>Progress</h2><span class="muted small">Updated ${esc(ago(job.updated_at))}</span></div><div class="card-b">
 <dl class="kv"><dt>Status</dt><dd>${jobStatusPill(job.status)}</dd><dt>Type</dt><dd>${kindPill(kind)}</dd><dt>Service</dt><dd>${esc(job.service_type)}</dd>
-<dt>Created</dt><dd>${esc(fmtDateTime(job.created_at))}</dd>${extras?.scheduled_date ? `<dt>Booked for</dt><dd>${esc(fmtDate(new Date(`${extras.scheduled_date}T09:00:00Z`)))}</dd>` : ''}
+<dt>Created</dt><dd>${esc(fmtDateTime(job.created_at))}</dd>${extras?.scheduled_date ? `<dt>Booked for</dt><dd>${esc(fmtDate(new Date(`${extras.scheduled_date}T09:00:00Z`)))}</dd><dt>Car handover</dt><dd>${extras.handover === 'pickup' ? `Mechanic collects it: ${esc(extras.pickup_address ?? '')}` : extras.handover === 'drop_off' ? 'Owner brings it to the garage' : '<span class="muted">Not chosen yet</span>'}</dd>` : ''}
 ${extras?.notes ? `<dt>Owner's notes</dt><dd>${esc(extras.notes)}</dd>` : ''}${kind === 'SOS' && owner ? `<dt>SOS location</dt><dd>${mapsLink(owner.location_lat, owner.location_lng)}</dd>` : ''}</dl>
 ${extras?.photo ? `<div class="photos" style="margin-top:12px">${photo(extras.photo, 'Photo from the owner')}</div>` : ''}</div></section>
 <section class="card"><div class="card-h"><h2>Job card</h2><span class="muted small">${done} of ${checklist.length} tasks done</span></div><div class="card-b">${
@@ -323,7 +309,7 @@ ${extras?.photo ? `<div class="photos" style="margin-top:12px">${photo(extras.ph
       ? checklist
           .map(
             (c) =>
-              `<div class="check"><span class="box${c.is_completed ? ' done' : ''}" aria-label="${c.is_completed ? 'Done' : 'Not done'}"></span><span style="flex:1">${esc(c.task_description)}</span>${c.completed_at ? `<span class="muted small">${esc(fmtDateTime(c.completed_at))}</span>` : ''}${mediaSrc(c.photo_url) ? `<a href="${mediaSrc(c.photo_url)}" target="_blank" rel="noopener" class="small">Photo</a>` : ''}</div>`,
+              `<div class="check"><span class="box${c.is_completed ? ' done' : ''}" aria-label="${c.is_completed ? 'Done' : 'Not done'}"></span><span style="flex:1">${esc(c.task_description)}</span>${c.completed_at ? `<span class="muted small">${esc(fmtDateTime(c.completed_at))}</span>` : ''}${mediaSrc(c.photo_url) ? `<a href="${mediaSrc(c.photo_url)}" target="_blank" rel="noopener" class="small">${isVideoPath(c.photo_url) ? `${icon('circle-play', 15)} Video` : 'Photo'}</a>` : ''}</div>`,
           )
           .join('')
       : '<p class="muted" style="margin:0">The checklist starts when the mechanic arrives.</p>'
@@ -595,6 +581,7 @@ adminRouter.get('/settings', async (req, res) => {
   const fee = await serviceFee();
   const devices = (await one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM device_tokens`))!.n;
   const shop = await shopSettings();
+  const [commission, review, steps] = await Promise.all([commissionPercent(), reviewListings(), jobStepsTable()]);
   const error = str(req.query.error);
   const body = `${error ? `<div class="notice warn" role="alert">${icon('triangle-alert')}${esc(
     {
@@ -602,6 +589,8 @@ adminRouter.get('/settings', async (req, res) => {
       version: 'Enter the version as three numbers, for example 1.0.0.',
       fee: 'Enter the delivery fee in whole shillings, for example 10000 (0 for free delivery).',
       pickup: 'Enter where owners collect pickup orders (at least a few words).',
+      commission: 'Enter the commission as a whole percentage from 0 to 50, for example 10.',
+      steps: 'Each job needs at least one step, and at most 30 steps of up to 120 characters.',
     }[error] ?? 'Check the values and try again.',
   )}</div>` : ''}
 <div class="grid2"><div>
@@ -616,7 +605,20 @@ adminRouter.get('/settings', async (req, res) => {
 <span class="hint">Added to every shop order delivered to an address. Use 0 for free delivery; pickup is always free.</span></div>
 <div class="field"><label for="pickup_location">Pickup location</label><input id="pickup_location" name="pickup_location" value="${esc(shop.pickupLocation)}" maxlength="150" required>
 <span class="hint">Where owners collect pickup orders, e.g. "MyCarRepair, Plot 12 Bombo Road, Wandegeya".</span></div>
+<h2 style="margin:18px 0 10px">Marketplace sellers</h2>
+<div class="field"><label for="commission_percent">Commission on seller sales (%)</label><input id="commission_percent" name="commission_percent" value="${esc(String(commission))}" inputmode="numeric" required>
+<span class="hint">MyCarRepair keeps this share of each seller item sold; the seller gets the rest after delivery. New orders use the new rate.</span></div>
+<div class="field"><label><input type="checkbox" name="review_listings" value="true"${review ? ' checked' : ''}> Check seller listings before they go live</label>
+<span class="hint">Recommended: new listings and changes to names, photos or part numbers wait under Shop products → Awaiting review.</span></div>
 <button class="btn primary">Save settings</button></form></div></section>
+<section class="card"><div class="card-h"><h2>Job steps</h2><span class="muted small">One step per line</span></div><div class="card-b">
+<p class="muted" style="margin:0 0 12px">The checklist each kind of job starts with on the mechanic's job card. Mechanics can add extra steps to a single job. Changes apply to new jobs; clear a box to go back to the default.</p>
+<form method="post" action="/admin/settings/steps"><div class="form-grid">${Object.entries(steps)
+    .map(
+      ([service, list], i) =>
+        `<div class="field"><label for="steps-${i}">${esc(service === 'Diagnostics' ? 'Diagnostics (any symptoms)' : service)}</label><input type="hidden" name="service" value="${esc(service)}"><textarea id="steps-${i}" name="steps" rows="${Math.min(10, list.length + 1)}">${esc(list.join('\n'))}</textarea></div>`,
+    )
+    .join('')}</div><button class="btn primary">Save job steps</button></form></div></section>
 </div><div>
 <section class="card"><div class="card-h"><h2>Maintenance mode</h2>${maintenance ? pill('On', 'warning') : pill('Off', 'success')}</div><div class="card-b">
 <p class="muted" style="margin:0 0 12px">While it is on, both apps show a "We'll be right back" screen and nobody can send SOS requests. Use it only during planned work on the system.</p>
@@ -641,11 +643,40 @@ adminRouter.post('/settings', async (req, res) => {
   const pickup = str(req.body?.pickup_location).trim().replace(/\s+/g, ' ');
   if (!/^\d{1,7}$/.test(fee)) return res.redirect(303, '/admin/settings?error=fee');
   if (pickup.length < 5 || pickup.length > 150) return res.redirect(303, '/admin/settings?error=pickup');
+  // The marketplace fields are part of the same form; an older copy of the page without them leaves them as they are.
+  if (req.body?.commission_percent !== undefined) {
+    const commission = str(req.body.commission_percent).replace(/[%\s]/g, '');
+    if (!/^\d{1,2}$/.test(commission) || Number(commission) > 50) return res.redirect(303, '/admin/settings?error=commission');
+    await setConfig('commission_percent', String(Number(commission)));
+    // An unticked checkbox isn't posted at all.
+    await setConfig('review_listings', str(req.body?.review_listings) === 'true' ? 'true' : 'false');
+  }
   await setConfig('support_phone', phone.replace(/\s+/g, ' '));
   await setConfig('min_app_version', version);
   await setConfig('delivery_fee', String(Number(fee)));
   await setConfig('pickup_location', pickup);
   res.redirect(303, '/admin/settings?notice=settings');
+});
+
+/** Saves the job-steps table: one textarea per service (one step per line); an empty box means the default. */
+adminRouter.post('/settings/steps', async (req, res) => {
+  const services = ([] as unknown[]).concat(req.body?.service ?? []).map(String);
+  const lists = ([] as unknown[]).concat(req.body?.steps ?? []).map(String);
+  const known = new Set(Object.keys(DEFAULT_JOB_STEPS));
+  const saved: Record<string, string[]> = {};
+  for (const [i, service] of services.entries()) {
+    if (!known.has(service)) continue;
+    const steps = (lists[i] ?? '')
+      .split(/\r?\n/)
+      .map((l) => l.trim().replace(/\s+/g, ' '))
+      .filter(Boolean);
+    if (!steps.length) continue;
+    if (steps.length > MAX_JOB_STEPS || steps.some((t) => t.length > JOB_STEP_MAX)) return res.redirect(303, '/admin/settings?error=steps');
+    // Only store what differs from the defaults, so improved defaults still reach untouched services.
+    if (steps.join('\n') !== DEFAULT_JOB_STEPS[service]!.join('\n')) saved[service] = steps;
+  }
+  await setConfig('job_steps', JSON.stringify(saved));
+  res.redirect(303, '/admin/settings?notice=steps');
 });
 
 adminRouter.post('/settings/maintenance', async (req, res) => {

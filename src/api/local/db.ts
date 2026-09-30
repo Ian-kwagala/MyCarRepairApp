@@ -5,6 +5,7 @@
  * columns, tri-state is_approved) so the mappers are the same ones the API applies (§5.1).
  * It starts EMPTY — no seed data. Users create their own accounts, cars and jobs.
  */
+import type { HandoverMode } from '@/models';
 import { Keys, kv } from '@/services/storage';
 
 /** A row of the `users` table. */
@@ -96,6 +97,11 @@ export interface JobExtraRow {
   scheduled_date: string | null;
   notes: string | null;
   photo: string | null;
+  /** Bookings: how the car reaches the mechanic (added later; older saved data lacks these). */
+  handover?: HandoverMode | null;
+  pickup_address?: string | null;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
 }
 
 /** The whole local database, saved to device storage as one JSON document. */

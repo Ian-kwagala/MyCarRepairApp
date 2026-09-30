@@ -21,10 +21,15 @@ export async function chrome() {
             (SELECT COUNT(*) FROM password_resets WHERE expires_at > now())::int AS resets,
             (SELECT COUNT(*) FROM jobs j WHERE j.status = 'pending' AND j.mechanic_id IS NULL AND ${SOS_SQL})::int AS "openSos",
             (SELECT COUNT(*) FROM orders WHERE status = 'placed')::int AS orders,
+            (SELECT COUNT(*) FROM products WHERE review_status = 'pending' AND is_active)::int AS listings,
+            (SELECT COUNT(*) FROM sellers WHERE status = 'pending')::int AS sellers,
             (SELECT value FROM system_config WHERE key = 'maintenance_mode') AS maintenance`,
     [SOS_LIST],
   ))!;
-  return { counts: { pending: r.pending, resets: r.resets, openSos: r.openSos, orders: r.orders }, maintenance: r.maintenance === 'true' };
+  return {
+    counts: { pending: r.pending, resets: r.resets, openSos: r.openSos, orders: r.orders, listings: r.listings, sellers: r.sellers },
+    maintenance: r.maintenance === 'true',
+  };
 }
 
 /** A query/body value as a string ('' when missing or not a string). */

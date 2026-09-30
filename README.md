@@ -101,8 +101,18 @@ additive `device_tokens`, `job_extras`, `media`, `refresh_tokens` and `password_
 - **`/admin` console** (sign in with any username and `ADMIN_PASSWORD`): live overview (open SOS, jobs in
   progress, mechanics online, job value, jobs per day), mechanic approvals, jobs with filters and a full job
   view (job card, parts quotes, bill, review), owners and mechanics with search and suspend/reactivate,
-  password-reset codes to read to verified callers (there's no SMS provider yet), and settings (support
-  phone, minimum app version, maintenance mode). Server-rendered, no external assets.
+  password-reset codes to read to verified callers (there's no SMS provider yet), the shop (products, orders,
+  marketplace sellers with listing checks, collection and payouts) and settings (support phone, minimum app
+  version, maintenance mode, delivery fee, pickup location, seller commission, job steps per service).
+  Server-rendered, no external assets.
+- **`/seller` portal** for marketplace sellers (Jumia model): shops sign up at `/seller/signup`, staff approve
+  them in `/admin` → Sellers, sellers list products (checked by staff before they go live), mark ordered items
+  ready for collection, and follow their earnings (sale price minus commission) and payouts. MyCarRepair keeps
+  the customer, delivery and payment; sellers never see buyers' details. Session cookie + same-origin checks.
+- **Jobs:** each SOS issue, booked service and diagnostics job starts with its own steps (editable in `/admin` →
+  Settings); mechanics can add steps and prove any step with a photo or a short video (MP4, served with HTTP
+  range requests). Accepted bookings stay quiet until the day (phone reminders the evening before and that
+  morning, no live tracking), and the owner chooses drop-off at the garage or pickup from an address.
 
 Run it locally:
 
@@ -182,7 +192,10 @@ src/
    `DATABASE_URL` at it. The schema matches, and the extra tables are additive. The `/api/v1` routes could
    also move into the web backend's Express app.
 2. **Password resets:** codes are read out by support from `/admin` for now. An SMS provider (Africa's
-   Talking, blueprint Phase 2) would send them automatically.
-3. For release builds: a **Google Maps API key** (`MAPS_KEY`), the **support / emergency phone number** (placeholder `+256700000000`; set it in
+   Talking, blueprint Phase 2) would send them automatically, and could also text sellers about new orders.
+3. **Storage for videos:** photos and step videos are stored in PostgreSQL. Render's free database holds 1 GB
+   and expires after 30 days; move to a paid database, or connect object storage (Cloudinary, S3/R2), before
+   real use.
+4. For release builds: a **Google Maps API key** (`MAPS_KEY`), the **support / emergency phone number** (placeholder `+256700000000`; set it in
    `/admin` → Settings), and a **Play Store signing
    key**.

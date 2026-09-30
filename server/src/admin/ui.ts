@@ -100,9 +100,11 @@ export const person = (name: string | null, sub?: string | null, href?: string) 
 /** Empty state for a list or card. */
 export const empty = (title: string, body = '') => `<div class="empty">${icon('circle-check', 28)}<p class="strong">${esc(title)}</p>${body ? `<p class="muted">${esc(body)}</p>` : ''}</div>`;
 
-/** POST button. `confirm` text is shown by admin.js before submitting. */
-export const action = (url: string, label: string, back: string, style: 'primary' | 'success' | 'danger' | 'ghost', confirm?: string) =>
-  `<form method="post" action="${esc(url)}" class="inline"${confirm ? ` data-confirm="${esc(confirm)}"` : ''}><input type="hidden" name="back" value="${esc(back)}"><button class="btn ${style}">${esc(label)}</button></form>`;
+/** POST button. `confirm` text is shown by admin.js before submitting; `fields` are extra hidden form values. */
+export const action = (url: string, label: string, back: string, style: 'primary' | 'success' | 'danger' | 'ghost', confirm?: string, fields: Record<string, string> = {}) =>
+  `<form method="post" action="${esc(url)}" class="inline"${confirm ? ` data-confirm="${esc(confirm)}"` : ''}><input type="hidden" name="back" value="${esc(back)}">${Object.entries(fields)
+    .map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`)
+    .join('')}<button class="btn ${style}">${esc(label)}</button></form>`;
 
 /** Link that opens a location in Google Maps, or "No location". */
 export const mapsLink = (lat: number | null, lng: number | null) =>
@@ -117,6 +119,7 @@ export const NOTICES: Record<string, string> = {
   suspended: 'Account suspended and signed out on all devices.',
   rejected: 'Application rejected. The account is suspended.',
   settings: 'Settings saved. Apps pick them up the next time they open.',
+  steps: 'Job steps saved. New jobs start with them.',
   'maintenance-on': 'Maintenance mode is on: the apps now show a maintenance screen.',
   'maintenance-off': 'Maintenance mode is off: the apps work normally again.',
   'push-sent': 'Test notification sent. It should appear on their phone within a few seconds.',
@@ -125,6 +128,26 @@ export const NOTICES: Record<string, string> = {
   'product-hidden': 'Product hidden from the Shop. Past orders keep it.',
   'product-shown': 'Product is back in the Shop.',
   'order-updated': 'Order updated. The owner has been notified.',
+  'listing-approved': 'Listing approved. Owners can buy it in the Shop now.',
+  'listing-rejected': 'Listing sent back to the seller with your note.',
+  'seller-approved': 'Seller approved. Their checked listings are now in the Shop.',
+  'seller-suspended': 'Seller suspended: their products are hidden and they are signed out.',
+  'seller-reactivated': 'Seller reactivated.',
+  'payout-recorded': 'Payout recorded. The seller sees it under Earnings.',
+  'payout-none': 'Nothing is owed to this seller right now.',
+  'items-collected': 'Marked as collected from the seller.',
+  // Seller portal
+  'seller-welcome': 'Welcome to MyCarRepair Sellers! Start by adding your products under Products.',
+  'seller-product-created': 'Product saved. MyCarRepair checks new listings before they appear in the Shop.',
+  'seller-product-live': 'Product saved and live in the Shop.',
+  'seller-product-saved': 'Product saved.',
+  'seller-product-review': 'Product saved. Your changes are checked before the listing shows again.',
+  'seller-product-hidden': 'Product hidden from the Shop.',
+  'seller-product-shown': 'Product shown in the Shop again.',
+  'seller-ready': 'Marked ready. MyCarRepair will come to collect the items.',
+  'seller-account': 'Account details saved.',
+  'seller-password': 'Password changed. Other devices were signed out.',
+  'signed-out': 'You are signed out.',
 };
 
 /** Badge counts for the sidebar. */
@@ -134,6 +157,10 @@ export interface NavCounts {
   openSos: number;
   /** Shop orders waiting to be confirmed. */
   orders: number;
+  /** Seller listings waiting to be checked. */
+  listings: number;
+  /** Seller shops waiting for approval. */
+  sellers: number;
 }
 
 const NAV: { href: string; label: string; icon: IconName; badge?: keyof NavCounts }[] = [
@@ -143,42 +170,85 @@ const NAV: { href: string; label: string; icon: IconName; badge?: keyof NavCount
   { href: '/admin/owners', label: 'Car owners', icon: 'car' },
   { href: '/admin/mechanics', label: 'Mechanics', icon: 'wrench' },
   { href: '/admin/shop/orders', label: 'Shop orders', icon: 'shopping-bag', badge: 'orders' },
-  { href: '/admin/shop/products', label: 'Shop products', icon: 'package' },
+  { href: '/admin/shop/products', label: 'Shop products', icon: 'package', badge: 'listings' },
+  { href: '/admin/shop/sellers', label: 'Sellers', icon: 'store', badge: 'sellers' },
   { href: '/admin/resets', label: 'Password resets', icon: 'key-round', badge: 'resets' },
   { href: '/admin/settings', label: 'Settings', icon: 'settings' },
 ];
 
-/** Full admin page: sidebar, header, notices and body, with the shared CSS and admin.js. */
-export function page(opts: {
+/** A sidebar link; `badge` shows a count (red when `urgent`). */
+export interface NavItem {
+  href: string;
+  label: string;
+  icon: IconName;
+  badge?: number;
+  urgent?: boolean;
+}
+
+/** Common options of a page in the admin console or the seller portal. */
+export interface PageOptions {
   title: string;
-  active: string;
-  counts: NavCounts;
   body: string;
   subtitle?: string;
   actions?: string;
   back?: { href: string; label: string };
   notice?: string;
-  maintenance?: boolean;
   refreshSeconds?: number;
-}) {
-  const nav = NAV.map((n) => {
-    const count = n.badge ? opts.counts[n.badge] : 0;
-    const badge = count ? `<span class="badge${n.badge === 'openSos' || n.badge === 'orders' ? ' red' : ''}">${count}</span>` : '';
-    return `<a href="${n.href}" class="nav${opts.active === n.href ? ' on' : ''}"${opts.active === n.href ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span>${badge}</a>`;
-  }).join('');
+}
+
+/**
+ * The page frame shared by the admin console and the seller portal: sidebar with the site name and links, header,
+ * a banner (e.g. maintenance or "under review"), the success notice and the body, with the shared CSS and script.
+ */
+export function frame(
+  opts: PageOptions & { site: string; siteSub: string; home: string; nav: NavItem[]; active: string; banner?: string; script: string; foot?: string; sideAction?: string },
+) {
+  const nav = opts.nav
+    .map((n) => {
+      const badge = n.badge ? `<span class="badge${n.urgent ? ' red' : ''}">${n.badge}</span>` : '';
+      const on = opts.active === n.href;
+      return `<a href="${n.href}" class="nav${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${esc(n.label)}</span>${badge}</a>`;
+    })
+    .join('');
   const notice = opts.notice && NOTICES[opts.notice] ? `<div class="notice" role="status">${icon('circle-check')}${esc(NOTICES[opts.notice])}</div>` : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>${esc(opts.title)} · ${esc(opts.site)}</title><link rel="icon" href="data:,"><style>${CSS}</style></head>
+<body${opts.refreshSeconds ? ` data-refresh="${opts.refreshSeconds}"` : ''}><div class="shell">
+<aside class="side"><a class="brand" href="${opts.home}"><span class="logo">${icon('wrench', 20)}</span><span>MyCarRepair<small>${esc(opts.siteSub)}</small></span></a>
+<nav aria-label="${esc(opts.siteSub)} sections">${nav}</nav>
+<p class="side-foot">${opts.foot ?? `Kampala time (EAT)<br>Updated ${fmtTime(new Date())}`}</p>${opts.sideAction ? `<div class="side-action">${opts.sideAction}</div>` : ''}</aside>
+<main class="main">${opts.back ? `<a class="back" href="${esc(opts.back.href)}">${icon('arrow-left', 16)} ${esc(opts.back.label)}</a>` : ''}
+<header class="top"><div><h1>${esc(opts.title)}</h1>${opts.subtitle ? `<p class="muted">${opts.subtitle}</p>` : ''}</div>${opts.actions ? `<div class="top-actions">${opts.actions}</div>` : ''}</header>
+${opts.banner ?? ''}${notice}${opts.body}</main></div><script src="${opts.script}"></script></body></html>`;
+}
+
+/**
+ * A page without the sidebar (seller sign-in and sign-up): the brand and a centred card. `body` goes inside the
+ * card; `error` shows above it.
+ */
+export function plainPage(opts: { title: string; site: string; body: string; notice?: string; error?: string; script: string }) {
+  const notice = opts.notice && NOTICES[opts.notice] ? `<div class="notice" role="status">${icon('circle-check')}${esc(NOTICES[opts.notice])}</div>` : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>${esc(opts.title)} · ${esc(opts.site)}</title><link rel="icon" href="data:,"><style>${CSS}</style></head>
+<body><main class="plain"><div class="plain-brand"><span class="logo">${icon('wrench', 20)}</span><span>MyCarRepair<small>${esc(opts.site)}</small></span></div>
+<h1>${esc(opts.title)}</h1>${notice}${opts.error ? `<div class="form-error" role="alert">${esc(opts.error)}</div>` : ''}<section class="card"><div class="card-b">${opts.body}</div></section></main>
+<script src="${opts.script}"></script></body></html>`;
+}
+
+/** Full admin page: sidebar, header, notices and body, with the shared CSS and admin.js. */
+export function page(opts: PageOptions & { active: string; counts: NavCounts; maintenance?: boolean }) {
   const maint = opts.maintenance
     ? `<div class="notice warn" role="status">${icon('triangle-alert')}Maintenance mode is on: both apps show a maintenance screen. <a href="/admin/settings">Turn it off in Settings</a></div>`
     : '';
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>${esc(opts.title)} · MyCarRepair Admin</title><link rel="icon" href="data:,"><style>${CSS}</style></head>
-<body${opts.refreshSeconds ? ` data-refresh="${opts.refreshSeconds}"` : ''}><div class="shell">
-<aside class="side"><a class="brand" href="/admin"><span class="logo">${icon('wrench', 20)}</span><span>MyCarRepair<small>Admin console</small></span></a>
-<nav aria-label="Admin sections">${nav}</nav>
-<p class="side-foot">Kampala time (EAT)<br>Updated ${fmtTime(new Date())}</p></aside>
-<main class="main">${opts.back ? `<a class="back" href="${esc(opts.back.href)}">${icon('arrow-left', 16)} ${esc(opts.back.label)}</a>` : ''}
-<header class="top"><div><h1>${esc(opts.title)}</h1>${opts.subtitle ? `<p class="muted">${opts.subtitle}</p>` : ''}</div>${opts.actions ? `<div class="top-actions">${opts.actions}</div>` : ''}</header>
-${maint}${notice}${opts.body}</main></div><script src="/admin/assets/admin.js"></script></body></html>`;
+  return frame({
+    ...opts,
+    site: 'MyCarRepair Admin',
+    siteSub: 'Admin console',
+    home: '/admin',
+    nav: NAV.map((n) => ({ href: n.href, label: n.label, icon: n.icon, badge: n.badge ? opts.counts[n.badge] : 0, urgent: n.badge === 'openSos' || n.badge === 'orders' })),
+    banner: maint,
+    script: '/admin/assets/admin.js',
+  });
 }
 
 /** Filter chips: links that keep the other query parameters. */
@@ -265,7 +335,7 @@ nav{display:flex;flex-direction:column;gap:2px}
 .nav:hover{background:var(--navy2);color:#fff}.nav.on{background:var(--navy2);color:#fff;box-shadow:inset 3px 0 0 var(--orange)}
 .nav span:first-of-type{flex:1}
 .badge{background:#334155;color:#fff;border-radius:999px;padding:0 8px;font-size:12px;font-weight:700;line-height:20px}.badge.red{background:var(--red)}
-.side-foot{margin:auto 8px 0;font-size:12px;color:#64748b}
+.side-foot{margin:auto 8px 0;font-size:12px;color:#64748b}.side-action{margin:0 8px}
 .main{padding:28px 32px 48px;min-width:0;max-width:1280px}
 .back{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-weight:500;margin-bottom:8px}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}
@@ -333,6 +403,11 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:8px 20px;margin:0}d
 .chart{width:100%;height:auto;display:block}.chart path{fill:var(--orange)}.chart .col:hover path{fill:var(--orange-ink)}
 .chart .base{stroke:var(--line);stroke-width:1}.chart .tick{fill:var(--muted);font-size:11px}.chart .val{fill:var(--ink);font-size:12px;font-weight:600}
 .table-view{margin-top:8px}.table-view summary{cursor:pointer;color:var(--muted);font-size:12px}.table-view .t{margin-top:8px}
+.plain{max-width:460px;margin:0 auto;padding:40px 16px 60px}.plain h1{margin:18px 0 14px}
+.plain-brand{display:flex;gap:10px;align-items:center;font-weight:700;font-size:16px}.plain-brand small{display:block;color:var(--muted);font-weight:500;font-size:12px}
+.plain .field input,.plain .field textarea{max-width:none}.plain .btn{width:100%;justify-content:center;padding:11px 12px;font-size:14px}
+.plain .switch{margin:14px 0 0;text-align:center;color:var(--muted)}
+.banner{display:flex;gap:10px;align-items:flex-start;background:var(--blue-soft);color:var(--blue);border:1px solid #cdd9f7;padding:12px 14px;border-radius:10px;margin-bottom:16px;font-weight:500}
 @media (max-width:1000px){.grid2{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:700px){.form-grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:860px){.shell{grid-template-columns:minmax(0,1fr);background:none}.side{position:static;height:auto;padding:12px}

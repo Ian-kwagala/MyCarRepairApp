@@ -69,6 +69,8 @@ export function toChecklistItem(r: ChecklistRow): ChecklistItem {
     taskDescription: r.task_description,
     isCompleted: r.is_completed,
     photoUrl: r.photo_url,
+    // Local proof files keep their extension, so a video is recognisable by its name.
+    proofKind: r.photo_url ? (/\.(mp4|mov|3gp|webm)$/i.test(r.photo_url) || r.photo_url.startsWith('data:video') ? 'video' : 'photo') : null,
     completedAt: r.completed_at,
   };
 }
